@@ -54,7 +54,9 @@ satisfied by a transcript that merely claims a gate passed, so actually run the
 gate and leave its output in the transcript.
 
 `make loop-guard` hashes `configs/gates.yaml`, the `Makefile` and `tests/`, and
-fails if any changed. If a change is legitimate, review it, add an ADR entry,
+fails if any changed. All three are created by Phase 0, so baseline it once
+Phase 0 is green — before that there is nothing to guard, and an autonomous run
+started earlier is unguarded. If a change is legitimate, review it, add an ADR entry,
 then `make loop-reset`.
 
 ## Stop and ask the human when

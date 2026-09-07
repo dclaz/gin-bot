@@ -809,3 +809,36 @@ so published win rates can be cited rather than their code run.
 **To confirm in Phase 2.** Whether `SimpleGinRummyBot` really is the EAAI
 `SimpleGinRummyPlayer`. Record the answer either way; if it is, the anchor's
 provenance is worth a sentence in the write-up.
+
+---
+
+## 2026-09-07 — Phase 0 bootstraps its own tooling
+
+**Context.** Readiness check before starting on the M4.
+
+**Finding.** Phase 0 was not self-contained. Step 1 said "`uv add` the dependency
+set in `pyproject.toml`" — but `uv init` *creates* that file and the dependency
+set was stated in no document, so the agent would have had to invent it. Nothing
+anywhere created the `Makefile`, `configs/gates.yaml` or `.env`, yet the prime
+directive is `make gate-pN`, `gate-p0` asserts `make facts-check` exits 0, gate
+thresholds "live in `configs/gates.yaml`" from Phase 1, and `make loop-guard`
+hashes all three. The plan assumed its own tooling into existence.
+
+**Decision.** Phase 0's Do list now builds, in order: the dependency set
+(enumerated — open-spiel pinned, torch, numpy, scipy, pyyaml, trackio, pytest,
+ruff); the `Makefile` with every target CLAUDE.md's Commands section names, gates
+for unreached phases exiting non-zero rather than 0; `configs/gates.yaml` with
+explicit `TODO`s for the uncalibrated Phase 4+ thresholds; and
+`tests/test_repo_consistency.py` **first**, before any other test. `gate-p0` now
+also requires that `make lint test` passes, that `make gate-p0` itself runs, and
+that Makefile gate names and `gates.yaml` keys resolve in both directions.
+
+**Ordering bug found with it.** The probe was specified to microbenchmark
+"the actual torso at the actual batch sizes" — but the torso does not exist until
+Phase 3, and Phase 4 now compares four of them. Phase 0 benchmarks a
+representative MLP as a stand-in, and Phase 4 re-runs the device decision per
+architecture.
+
+**Consequence.** `make loop-guard` has nothing to hash until Phase 0 is green, so
+it is baselined then. An autonomous run started before that point is unguarded;
+CLAUDE.md now says so.

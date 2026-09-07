@@ -78,19 +78,53 @@ behaviour.
 
 **Goal.** Make the environment a known quantity, once, and write it down.
 
-**Do.**
-1. `uv init`, `uv python pin 3.13`, `uv add` the dependency set in
-   `pyproject.toml`. Commit `uv.lock`.
-2. Write `scripts/probe_env.py`. It records: platform, arch, CPU core counts by performance level, Python,
-   torch, MPS availability and bf16 support, `open_spiel` version, and — the
-   important part — the gin rummy game facts: action count, observation size,
-   parameter defaults, the full action-id → action-string table, which tensors
-   and struct methods exist, whether `resample_from_infostate` works, and a
-   CPU-vs-MPS microbenchmark of the actual torso at the actual batch sizes.
-3. Emit `docs/ENV_FACTS.md` and `src/ginrl/spiel_facts.py`.
-4. Add `make facts-check` to CI and to the pre-commit path.
+**Do.** Phase 0 bootstraps its own tooling. Nothing below exists yet, so build
+it in this order.
+
+1. `uv init`, `uv python pin 3.13`, then `uv add`:
+   - runtime: `open-spiel==2.0.2` (pinned — see Expected surprises), `torch`,
+     `numpy`, `scipy` (the Bradley-Terry fit, the Hodge decomposition and Nash
+     averaging's LP all use it), `pyyaml` (reads `configs/gates.yaml`),
+     `trackio`;
+   - dev: `pytest`, `ruff`.
+   Anything beyond this list needs an ADR entry saying what capability is missing
+   — see CLAUDE.md, "Do not". Commit `uv.lock`.
+2. **Write the `Makefile`.** Every target named in CLAUDE.md's Commands section:
+   `setup`, `probe`, `facts-check`, `test`, `lint`, `gate-p0`..`gate-p7`,
+   `gate-all`, `status`, `board`, `elo`, `loop-guard`, `loop-reset`. Gates for
+   phases not yet reached should exit non-zero with "not implemented", never 0.
+   Export `PYTORCH_ENABLE_MPS_FALLBACK=1`, and write the `.env` that CLAUDE.md
+   says carries it.
+3. **Write `configs/gates.yaml`** with every threshold this plan names, and an
+   explicit `TODO` for each one that is uncalibrated (Phase 4 onward). `make
+   status` prints its SHA-256; `make loop-guard` baselines against it, so it must
+   exist before any autonomous run starts.
+4. **Write `tests/test_repo_consistency.py` first**, before any other test. Every
+   defect in the 2026-09-07 review was cross-file drift, and this is the file
+   that catches that class: Makefile gate names match `gates.yaml` keys in both
+   directions, make targets cited in docs exist, no removed ruff rules in the
+   ignore list, and the tiering decisions hold. Parse structure — TOML, YAML,
+   non-comment lines — do not grep file contents, or explanations get read as
+   rules.
+5. Write `scripts/probe_env.py`. It records: platform, arch, CPU core counts by
+   performance level, Python, torch, MPS availability and bf16 support,
+   `open_spiel` version, and — the important part — the gin rummy game facts:
+   action count, observation size, parameter defaults, the full action-id →
+   action-string table, which tensors and struct methods exist, whether
+   `resample_from_infostate` works, and a CPU-vs-accelerator microbenchmark.
+   *The real torso does not exist until Phase 3, and Phase 4 compares four of
+   them*, so benchmark a representative MLP at the configured batch sizes as a
+   stand-in and re-run the device decision per architecture in Phase 4.
+6. Emit `docs/ENV_FACTS.md` and `src/ginrl/spiel_facts.py`.
+7. Add `make facts-check` to CI and to the pre-commit path. Confirm Trackio's
+   CLI syntax while you are here — the docs cite `trackio list` / `trackio get` /
+   `trackio query --sql`, unverified on this machine; fix the docs if it differs.
 
 **Gate `gate-p0`.**
+- `make lint test` passes, and `make gate-p0` itself runs — the tooling this
+  phase builds is the first thing the phase proves.
+- `configs/gates.yaml` exists and every gate name in the `Makefile` resolves to a
+  key in it, in both directions.
 - `uv run python -c "import pyspiel, torch"` succeeds.
 - `docs/ENV_FACTS.md` and `src/ginrl/spiel_facts.py` exist and are newer than
   `pyproject.toml`.
