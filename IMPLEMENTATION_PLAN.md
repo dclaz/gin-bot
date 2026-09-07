@@ -17,7 +17,7 @@ on generated facts. These catch "the code no longer means what it said".
 
 **Layer 2 — Gates.** One per phase (`make gate-pN`). Slower (seconds to tens of
 minutes), thresholded, and *append-only*: a gate may be added, never weakened,
-except via an ADR entry in `docs/DECISIONS.md` written in the same commit.
+except via a commit whose message gives the old value, the new value and why.
 `make gate-all` runs every gate in order and is the release check. Thresholds
 live in `configs/gates.yaml`; `make status` prints that file's SHA-256 so
 silent loosening is visible in the run log.
@@ -36,7 +36,8 @@ an approaching failure is visible for an hour before it fires. Full spec in
 
 **The correction loop.** When a gate fails, the agent must, in order:
 (1) reproduce with the seed printed by the gate; (2) write a one-paragraph
-diagnosis to `docs/DECISIONS.md` *before* editing code; (3) fix forward or
+diagnosis *before* editing code, and carry it into the fix's commit message;
+(3) fix forward or
 `git revert`; (4) re-run the gate. Three failed diagnoses on the same gate is a
 stop-and-ask condition. Editing the gate is never step 3.
 
@@ -52,16 +53,16 @@ what stops the agent re-deriving the action layout in every session.
 
 **The documents, and nothing else.** This tree contains `README.md`,
 `CLAUDE.md`, `METHODOLOGY.md`, this plan, `docs/OBSERVABILITY.md` and
-`docs/DECISIONS.md`. There is no `src/`, no `Makefile`, no `configs/`, no
+`docs/OBSERVABILITY.md`. There is no `src/`, no `Makefile`, no `configs/`, no
 `tests/`, no `pyproject.toml`, no `scripts/`, and no commit on `main`.
 
 An earlier session prototyped `scripts/probe_env.py`,
 `src/ginrl/telemetry/recorder.py`, `src/ginrl/eval/{ratings,report_ratings,population}.py`,
-`configs/gates.yaml` and a test suite, and `docs/DECISIONS.md` still describes
-that work in detail. **Those files were never committed and are not recoverable.**
-Read those entries as a specification to build to — the design decisions in them
-stand and were expensive to reach — not as a description of files on disk. Every
-artifact named in the phases below is to be written.
+`configs/gates.yaml` and a test suite. **Those files were never committed and are
+not recoverable.** What they were built to is written down:
+`docs/OBSERVABILITY.md` § Ratings is the specification for the ratings and
+population modules, and § Stack for the Recorder. Every artifact named in the
+phases below is to be written.
 
 So: `make` does not exist yet either. Phase 0 creates the Makefile, and until it
 does, the commands in `CLAUDE.md` describe the target state rather than the
@@ -87,7 +88,7 @@ it in this order.
      averaging's LP all use it), `pyyaml` (reads `configs/gates.yaml`),
      `trackio`;
    - dev: `pytest`, `ruff`.
-   Anything beyond this list needs an ADR entry saying what capability is missing
+   Anything beyond this list needs a commit message saying what capability is missing
    — see CLAUDE.md, "Do not". Commit `uv.lock`.
 2. **Write the `Makefile`.** Every target named in CLAUDE.md's Commands section:
    `setup`, `probe`, `facts-check`, `test`, `lint`, `gate-p0`..`gate-p7`,
@@ -98,7 +99,7 @@ it in this order.
 3. **Write `configs/gates.yaml`** with every threshold this plan names, and an
    explicit `TODO` for each one that is uncalibrated (Phase 4 onward). `make
    status` prints its SHA-256, which is the only record that a threshold has not
-   been quietly loosened — record it in the phase's ADR entry.
+   been quietly loosened — record it in the commit that closes the phase.
 4. **Write `tests/test_repo_consistency.py` first**, before any other test. Every
    defect in the 2026-09-07 review was cross-file drift, and this is the file
    that catches that class: Makefile gate names match `gates.yaml` keys in both
@@ -267,8 +268,8 @@ confidence" before there is anything to evaluate. Built second, not last.
 6. `ginrl/eval/ratings.py`, `report_ratings.py`, `population.py` — anchored
    Bradley-Terry with CIs, the Helmholtz-Hodge diagnostic, and Nash averaging.
    Wire them into the arena and tournament scripts and add the `tests/gates/`
-   assertions that exercise them. Build to the spec in the `docs/DECISIONS.md`
-   entries dated 2026-09-06; they record what the prototype verified.
+   assertions that exercise them. `docs/OBSERVABILITY.md` § Ratings is the
+   specification, down to the measured anchors the tests should reproduce.
 7. `runs/game_record.jsonl` — the append-only record of every evaluation game
    ever played. Ratings are always refit from this file, never accumulated in
    memory, so any rating is reproducible from disk.
@@ -409,8 +410,8 @@ and bugs are visible.
   four torsos: mean paired score with CI, `belief/auc` on undetermined cards,
   parameter count, and steps/s. Equal budget, three seeds, duplicate deals. The
   gate requires the table and the equal-budget discipline, *not* a particular
-  winner — whichever torso wins carries forward, recorded in an ADR entry with
-  its margin.
+  winner — whichever torso wins carries forward, with its margin recorded in the
+  commit that closes the phase.
 - **The no-features control is informative either way.** If (D) is competitive
   with (A), METHODOLOGY §4's central premise — that hand-engineered structure
   beats learned embeddings here — does not hold in our rule set, and that is a
@@ -418,7 +419,7 @@ and bugs are visible.
 - A **spike, timeboxed to one session**: attempt exact `nash_conv` on the smallest
   legal config. It was killed by the OOM reaper in our probe on a much larger
   machine, so the expected outcome is "confirmed infeasible" — record that in
-  `docs/DECISIONS.md` and move on. Do not let this become a project.
+  the commit message and move on. Do not let this become a project.
 
 ---
 
@@ -431,30 +432,36 @@ score is in the state — a policy that cannot see the score cannot learn the
 score-dependent knock threshold, which is the interesting half of the question.
 
 **Do.**
-1. Profile first — and profile the *feature path*, not raw stepping. The ~36k
+1. **Re-benchmark CPU against MPS at the real model size and batch size, on
+   this phase's actual torso, before starting any long run.** Phase 0's device
+   recommendation came from a stand-in MLP; Phase 4's came from a reduced-deck
+   model. Neither is evidence about the full-game network, and the ordering can
+   invert with size — see landmine 9. Getting this wrong costs the whole run and
+   the check costs minutes. Record both numbers in the run's config.
+2. Profile the *feature path*, not raw stepping. The ~36k
    steps/s/core figure is raw `step` + observation + mask; it does not include
    `to_observation_struct().to_dict()` per seat per decision or `BeliefTracker`
    accumulation, which is the pipeline actually running. Measure that before
    concluding the environment is cheap. If inference still dominates, fix
    batching before adding processes. Multi-process actors (`spawn`, the
    accelerator confined to the learner process) only if the profile justifies it.
-2. Train with annealed regularisation. Checkpoint on a schedule and keep the
+3. Train with annealed regularisation. Checkpoint on a schedule and keep the
    **best** checkpoint by ladder performance, not the last — a known
    several-point effect in this game.
-3. Apply `ginrl/eval/rlbr.py` — built and calibrated in Phase 3 against known
+4. Apply `ginrl/eval/rlbr.py` — built and calibrated in Phase 3 against known
    Kuhn/Leduc exploitability, so its answer here is a measurement rather than an
    assertion. Freeze the champion, train a fresh PPO agent against it as a
    single-agent MDP, report the value achieved. This is a lower bound on
    exploitability and the only tractable worst-case measure here. Also run the
    ISMCTS-BR variant for a second opinion.
-4. Maintain a fixed **evaluation ladder** — random, simple bot, heuristic family,
+5. Maintain a fixed **evaluation ladder** — random, simple bot, heuristic family,
    ISMCTS at fixed budget, previous champions — that never enters training.
    Every `elo_every` steps, play duplicate deals against each ladder member and
    a sample of past checkpoints, append to `runs/game_record.jsonl`, refit the
    Bradley-Terry model over the whole record anchored on `SimpleGinRummyBot = 0`,
    and log `ratings/current_elo` with its CI, `ratings/points_per_hand_vs_anchor`
    and `ratings/cyclic_fraction`. Run this off the learner's critical path.
-5. Log the `style/` namespace throughout, so the emerging playing style — gin
+6. Log the `style/` namespace throughout, so the emerging playing style — gin
    rate, turns to knock, deadwood at knock — is visible as it forms rather than
    measured once at the end.
 

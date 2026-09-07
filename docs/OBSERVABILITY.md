@@ -15,6 +15,10 @@ jobs — one is the record decisions are made from, the other is what a human
 looks at while a run is going. A second dashboard would just be a second place
 for the truth to live.
 
+**Reading a run from SQLite.** Trackio's `metrics` column is a hex-encoded JSON
+blob, so raw SQL needs decoding — `trackio get` is the readable path, and
+`runs/<run>/metrics.jsonl` is the one gates read regardless.
+
 **Why Trackio.** Local-first, no account, runs stored in SQLite, and a CLI
 (`trackio list`, `trackio get`, `trackio query --sql`). That last point decides
 it for this repo: a coding agent can interrogate its own training run rather
@@ -258,7 +262,7 @@ agent near the origin has no cyclic character — it is simply strong or weak.
 
 Four metric names contain the word *cyclic* and they are not interchangeable.
 This table is authoritative; CLAUDE.md's landmine 7 points here. A fifth name
-needs an ADR entry.
+needs a commit message saying why.
 
 | Metric | Question it answers | Tier | Cadence |
 |---|---|---|---|

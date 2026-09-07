@@ -39,8 +39,8 @@ balanced?**
 Design rationale is in [METHODOLOGY.md](METHODOLOGY.md). The build order and its
 acceptance gates are in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
 Telemetry and rating design is in [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md).
-Every non-obvious choice, gate-failure diagnosis and landmine is recorded in
-[docs/DECISIONS.md](docs/DECISIONS.md).
+Non-obvious choices, gate-failure diagnoses and new landmines are recorded in
+commit messages — `git log` is the decision register.
 
 ## Quickstart
 

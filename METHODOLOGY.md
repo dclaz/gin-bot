@@ -250,7 +250,7 @@ attached.
 
 **The rule that keeps this from regrowing:** adding an evaluation metric
 requires naming which existing one it replaces or demoting one to a lower tier,
-in the same ADR entry. Five ways to rank the same agents is four ways to pick
+in the same commit message. Five ways to rank the same agents is four ways to pick
 whichever answer you like best.
 
 

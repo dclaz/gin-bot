@@ -6,8 +6,8 @@ Gin Rummy RL research repo. OpenSpiel engine, PyTorch, Apple Silicon, uv.
 
 Work phase by phase against `IMPLEMENTATION_PLAN.md`. A phase is done when
 `make gate-pN` exits 0 — not when the code "looks right". Never edit a gate
-to make it pass; changing a gate threshold requires an ADR entry in
-`docs/DECISIONS.md` first, in the same commit.
+to make it pass; changing a gate threshold requires the commit that changes it to
+say, in its message, what the old value was, what the new one is, and why.
 
 ## What is fixed, and what is a default
 
@@ -20,40 +20,35 @@ how much room you have.
 - **Load-bearing decisions** — the acceptance gates, the evaluation tiering in
   METHODOLOGY §5.1, information hygiene as a bit-exact test, duplicate deals,
   refit-not-incremental ratings, JSONL as the source of truth. Each was reasoned
-  to at cost and each has a test behind it. Changing one needs an ADR entry
-  *first*, in the same commit.
+  to at cost and each has a test behind it. Changing one needs the reason in the
+  commit message that changes it.
 - **Defaults** — everything else: module layout, network torso, feature set,
   sweep grids, which magnet modes exist. These are a starting point, not a
   specification. **You may change a default if the phase gate still passes and
-  you record the change in `docs/DECISIONS.md`.** A better idea that clears the
+  you say so in the commit message.** A better idea that clears the
   same gate is a contribution, not a deviation.
 
 The gates are the contract. Where a default and a gate disagree, the gate wins.
 
-## Watching a long run
-
-`/loop` re-runs a prompt on a timer. Use it to watch a training run, never to
-drive one: the watch prompt in `.claude/loop.md` is read-only — tail
-`runs/<run>/metrics.jsonl`, compare against `tripwires:` in `configs/gates.yaml`,
-report two lines, stop on a fire.
-
-Scheduled wakeups fire only when Claude is idle and missed fires are not caught
-up, so a foreground training run blocks every check. Background long runs and
-observe the JSONL.
-
 ## Gate integrity
 
-There is no mechanical guard on the gates. The rule in the prime directive holds
-on its own: never edit a gate to make it pass, and changing a threshold needs an
-ADR entry in `docs/DECISIONS.md` in the same commit. `make status` prints the
-SHA-256 of `configs/gates.yaml`, so compare it against the value recorded in the
-phase's ADR entry — that is the trail, and it is the whole of it.
+There is no mechanical guard on the gates, so the record is the git history.
+Never edit a gate to make it pass. A commit that changes a threshold must say so
+in its message, with the old value, the new value and the reason.
+
+`make status` prints the SHA-256 of `configs/gates.yaml`. Compare it against the
+hash in the commit that last changed the file — `git log -p -- configs/gates.yaml`
+— not against your working tree. A tampered threshold that has been committed
+becomes HEAD, after which a working-tree comparison correctly reports no drift
+and tells you nothing. That has happened here before.
 
 ## Stop and ask the human when
 
 - A gate fails three times with three different fixes.
 - A fix requires changing a number in `configs/gates.yaml`.
-- You are about to start a training run longer than 30 minutes.
+- You are about to start a training run longer than 30 minutes — and before you
+  ask, re-benchmark CPU against MPS at that run's real model and batch size, and
+  bring both numbers. Picking the wrong device costs the whole run.
 - `make facts-check` reports drift you did not cause.
 
 ## Environment (do not rediscover this)
@@ -169,9 +164,13 @@ Verified by running OpenSpiel 2.0.2. Re-verify on the M4 via `make probe`;
    NumPy defaults to float64, so cast at the boundary. `.numpy()` on an MPS
    tensor needs a `.cpu()` first.
 9. **MPS is often slower than CPU for our model sizes.** The learner runs on
-   whichever device `make probe` benchmarked as faster at the configured batch
-   size. Actors always run on CPU. One process touches MPS; never fork after
-   initialising an MPS context.
+   whichever device was benchmarked faster *at the size actually being trained*.
+   Per-kernel dispatch overhead means the ordering can invert between a small
+   model and a large one, so a recommendation made at one size is not evidence
+   about another: `make probe` at Phase 0 measures a stand-in, Phase 4 measures a
+   reduced-deck model, and neither settles the full-game network. Re-benchmark
+   before any expensive run. Actors always run on CPU. One process touches MPS;
+   never fork after initialising an MPS context.
 10. **Elo lies when the pool is intransitive.** Self-play against past
    checkpoints can show a smoothly rising Elo while the agent cycles. Never
    report Elo without `ratings/cyclic_fraction` beside it; in a pure
@@ -209,7 +208,7 @@ Full spec in `docs/OBSERVABILITY.md`. The parts that constrain code:
 - Metric names are namespaced: `loss/`, `reg/`, `policy/`, `value/`, `opt/`,
   `belief/`, `ratings/`, `population/`, `style/`, `perf/`, `tripwire/`. That
   list is closed — `docs/OBSERVABILITY.md` defines each one, and a new namespace
-  needs an ADR entry. Every tripwire logs both its current value and its
+  needs a commit message saying why. Every tripwire logs both its current value and its
   threshold, so you can watch it approach.
 - `style/*` — gin rate, knock rate, deadwood at knock, turns to knock — is not
   decoration. It is the research question, live. Log it from Phase 4 onward.
@@ -232,25 +231,28 @@ Full spec in `docs/OBSERVABILITY.md`. The parts that constrain code:
 1. `make lint test` passes.
 2. `make facts-check` passes.
 3. The gate for the current phase passes.
-4. `docs/DECISIONS.md` has an entry if you made a non-obvious choice, chose
-   between two reasonable designs, or discovered a new landmine.
-5. Commit message states what was verified, not what was written.
+4. The commit message states **what was verified, not what was written** — and
+   records any non-obvious choice, any pick between two reasonable designs, and
+   any new landmine. There is no separate decision log; `git log` is it, which is
+   why the message carries the reasoning rather than a summary of the diff.
+5. A new landmine also goes into the Landmines list below, where the next
+   session will actually read it. The commit says why; this file says what.
 
 ## Session protocol
 
-Start: `make status`, then read the last three entries of `docs/DECISIONS.md`
-and the current phase section of `IMPLEMENTATION_PLAN.md`. Do not read the whole
-plan every session.
+Start: `make status`, then `git log --oneline -10` and the current phase section
+of `IMPLEMENTATION_PLAN.md`. Do not read the whole plan every session.
 
-End: update `docs/DECISIONS.md`, run `make lint test`, commit.
+End: `make lint test`, then commit with a message that records what you verified
+and any decision a future session would otherwise re-litigate.
 
 ## Do not
 
 - Do not reimplement meld/deadwood logic (landmine: `GinRummyUtils` exists).
 - Do not port R-NaD from JAX. See METHODOLOGY.md §3 for why regularised policy
   gradient is the chosen family; a JAX toolchain on this machine is a side quest.
-- Do not add a dependency without an ADR entry that states what capability is
-  missing and why nothing already installed provides it. Especially not `jax`,
+- Do not add a dependency without a commit message that states what capability
+  is missing and why nothing already installed provides it. Especially not `jax`,
   `tensorflow`, `ray`, `hydra`, or a second experiment tracker.
 - Do not "improve" the reward function in the main training path. Reward
   shaping changes the game; shaped agents are population members evaluated on
@@ -259,7 +261,7 @@ End: update `docs/DECISIONS.md`, run `make lint test`, commit.
   number of duplicate deals behind it.
 - Do not report Elo without its CI and the current `ratings/cyclic_fraction`.
 - **Do not add an evaluation metric without removing or demoting one.** Name the
-  trade in the same ADR entry. This stack already accreted once and was trimmed;
+  trade in the same commit message. This stack already accreted once and was trimmed;
   five ways to rank the same agents is four ways to pick the answer you like.
   The tiering in METHODOLOGY.md section 5 is the contract: Tier 1 is gated,
   Tier 2 is one figure for the write-up, Tier 3 is off by default.
