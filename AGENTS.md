@@ -188,6 +188,14 @@ Verified by running OpenSpiel 2.0.2. Re-verify on the M4 via `make probe`;
    "raw stepping is not the bottleneck, inference batching probably is" — the
    feature path is unmeasured until Phase 1 measures it. Profile before
    optimising either.
+13. **`discard_pile` excludes the takeable card.** The struct's `discard_pile`
+   is the buried pile only; the takeable card lives in the `upcard` field
+   (`None` at Discard time, when `pile[-1]` is the just-discarded card).
+   Taking "the upcard" delivers the `upcard` field's card and leaves the pile
+   untouched. Recording takes from `pile[-1]` attributes buried cards to the
+   opponent's hand and inverts the belief signal. Undercut is strict, too: a
+   tied deadwood scores 0-0 for the knocker, not undercut+25 (METHODOLOGY §1
+   said "ties or beats" — wrong; fixed in Phase 1).
 
 ## Observability
 

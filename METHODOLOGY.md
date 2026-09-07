@@ -6,8 +6,10 @@ Gin Rummy is a two-player, zero-sum, imperfect-information, stochastic card game
 Each player holds ten cards from a 52-card deck, draws from either the face-down
 stock or the face-up discard pile, discards one card, and may knock once their
 deadwood (unmelded card value) falls to ten or below, or declare gin at zero
-deadwood. The knocker scores the difference in deadwood; a defender who ties or
-beats the knocker's deadwood undercuts and scores instead, with a bonus. In
+deadwood. The knocker scores the difference in deadwood; a defender whose
+deadwood is strictly below the knocker's undercuts and scores instead, with a
+bonus. A tie scores zero for the knocker (verified: a 9-9 tie returns 0-0,
+not undercut+25 — the engine's undercut condition is strict). In
 OpenSpiel's implementation the gin bonus and undercut bonus are both 25 and the
 knock card is 10, all configurable.
 

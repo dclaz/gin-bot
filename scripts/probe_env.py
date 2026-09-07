@@ -402,11 +402,21 @@ def render_env_facts_md(facts: dict[str, object]) -> str:
     return "\n".join(out)
 
 
+# Gates append phase results after this marker; `make probe` preserves them.
+APPEND_MARKER = "<!-- phase-results-append-below -->"
+
+
 def write_outputs(facts: dict[str, object]) -> None:
     SPIEL_FACTS_PY.parent.mkdir(parents=True, exist_ok=True)
     (SPIEL_FACTS_PY.parent / "__init__.py").touch(exist_ok=True)
     SPIEL_FACTS_PY.write_text(render_spiel_facts_py(facts))
-    ENV_FACTS_MD.write_text(render_env_facts_md(facts))
+    body = render_env_facts_md(facts)
+    if ENV_FACTS_MD.exists():
+        text = ENV_FACTS_MD.read_text()
+        marker_at = text.find(APPEND_MARKER)
+        if marker_at >= 0:
+            body = body + "\n" + text[marker_at:]
+    ENV_FACTS_MD.write_text(body)
 
 
 def check() -> int:

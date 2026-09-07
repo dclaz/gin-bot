@@ -29,8 +29,8 @@ lint:
 gate-p0: lint test
 	$(UV) python scripts/gate_p0.py
 
-gate-p1:
-	@echo "not implemented (Phase 1 — game layer)"; exit 1
+gate-p1: lint test
+	$(UV) python scripts/gate_p1.py
 
 gate-p2:
 	@echo "not implemented (Phase 2 — opponents and evaluation harness)"; exit 1
