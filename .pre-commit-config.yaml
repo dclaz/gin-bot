@@ -1,0 +1,15 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.6
+    hooks:
+      - id: ruff-check
+        args: [--force-exclude]
+      - id: ruff-format
+        args: [--force-exclude]
+  - repo: local
+    hooks:
+      - id: facts-check
+        name: facts-check (generated facts match the live engine)
+        entry: make facts-check
+        language: system
+        pass_filenames: false

@@ -1,0 +1,97 @@
+# Acceptance-gate thresholds. The gates are the contract (IMPLEMENTATION_PLAN.md).
+#
+# Gate integrity: never edit a threshold to make a gate pass. A commit that
+# changes a number below must state the old value, the new value, and why.
+# `make status` prints this file's SHA-256; compare it against the hash in the
+# commit that last changed this file (`git log -p -- configs/gates.yaml`), not
+# against the working tree.
+#
+# Entries marked TODO are uncalibrated (Phase 4 onward). A TODO threshold with
+# a starting value is a placeholder the phase's first run is expected to move,
+# via a commit that says so.
+
+gate-p0:
+  description: "Phase 0 — environment lock-in."
+  num_distinct_actions: 241
+  observation_tensor_size: 644
+  information_state_tensor_raises: true
+  gin_rummy_utils_importable: true
+  simple_bot_constructs: true
+  learner_device_allowed: ["cpu", "mps"]
+
+gate-p1:
+  description: "Phase 1 — game layer."
+  meld_oracle_states: 20000
+  zero_sum_playouts: 50000
+  mask_fuzz_states: 100000
+  hygiene_states: 5000
+  hygiene_resamples: 32
+  throughput_regression_max: 2.0
+
+gate-p2:
+  description: "Phase 2 — opponents and evaluation harness."
+  null_calibration_duplicate_deals: 10000
+  # Regression baselines from Phase 0's probe (informational, not pass/fail).
+  ref_decisions_per_game: 34
+  ref_points_per_hand_magnitude: 16.4
+  rating_recovery_tolerance_elo: 25  # TODO: uncalibrated, revisit in Phase 2.
+  rating_ci_coverage_min: 0.90
+  cyclic_fraction_rps: 0.9994
+  cyclic_fraction_rps_tolerance: 0.01
+  cyclic_fraction_ladder: 0.0006
+  cyclic_fraction_ladder_tolerance: 0.01
+
+gate-p3:
+  description: "Phase 3 — trainer core on Kuhn and Leduc."
+  kuhn_nash_conv_max: 0.01
+  leduc_nash_conv_max: 0.20
+  kuhn_uniform_nash_conv: 0.9167
+  leduc_uniform_nash_conv: 4.7472
+  rlbr_calibration_tolerance: 0.05  # TODO: uncalibrated, revisit in Phase 3.
+
+gate-p4:
+  description: "Phase 4 — reduced gin rummy."
+  seeds: 3
+  final_score_spread_max: 1.0  # TODO: uncalibrated, set from the first bake-off.
+  belief_auc_floor: 0.55  # TODO: uncalibrated; scored only over tracker-undetermined cards.
+  equal_gradient_step_budget: true
+
+gate-p5:
+  description: "Phase 5 — full game, matches to 100."
+  duplicate_deals_min: 20000
+  fit_ratings: true
+  logging_overhead_frac_max: 0.02
+  elo_gain_margin: 50  # TODO: uncalibrated, set from the first full run.
+  cyclic_fraction_max: 0.2  # TODO: uncalibrated; above this Elo is not the headline.
+  reproducibility_tolerance_points_per_hand: 0.5  # TODO: uncalibrated.
+  points_per_hand_vs_anchor: true
+  match_win_rate_vs_anchor: true
+  knock_threshold_moves_with_score: true
+  rlbr_bound: true
+
+gate-p6:
+  description: "Phase 6 — style study population."
+  nash_averaging: true
+  bootstrap_rank_stability_min: 0.8  # TODO: uncalibrated, set from the first tournament.
+  zero_sum_residual_max: 0.01  # TODO: uncalibrated.
+  clone_invariance_nash_drift_max: 0.01  # TODO: uncalibrated.
+  # Unit-test anchors (synthetic populations, verified).
+  nash_clone_drift_anchor: 0.0
+  alpha_rank_clone_drift_anchor: 0.2225
+  schur_rps_cyclic_energy: 0.999
+  schur_ladder_transitive_energy: 0.999
+  melo_rps_cycle_explained: 0.859
+  melo_ladder_cycle_explained: 0.0
+  melo_ladder_cyclic_strength: 0.0
+  cycle_explained_floor: 0.1  # TODO: uncalibrated.
+  alpha_rank:
+    tier: "Tier 3"
+    required: false
+    use_inf_alpha: true
+    warn_free: true
+
+gate-p7:
+  description: "Phase 7 — rules sweep and write-up."
+  sweep_cells_trained: true
+  no_placeholder_text: true
+  gate_all_from_clean_clone: true
