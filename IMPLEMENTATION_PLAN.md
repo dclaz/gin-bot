@@ -91,14 +91,14 @@ it in this order.
    — see CLAUDE.md, "Do not". Commit `uv.lock`.
 2. **Write the `Makefile`.** Every target named in CLAUDE.md's Commands section:
    `setup`, `probe`, `facts-check`, `test`, `lint`, `gate-p0`..`gate-p7`,
-   `gate-all`, `status`, `board`, `elo`, `loop-guard`, `loop-reset`. Gates for
+   `gate-all`, `status`, `board`, `elo`. Gates for
    phases not yet reached should exit non-zero with "not implemented", never 0.
    Export `PYTORCH_ENABLE_MPS_FALLBACK=1`, and write the `.env` that CLAUDE.md
    says carries it.
 3. **Write `configs/gates.yaml`** with every threshold this plan names, and an
    explicit `TODO` for each one that is uncalibrated (Phase 4 onward). `make
-   status` prints its SHA-256; `make loop-guard` baselines against it, so it must
-   exist before any autonomous run starts.
+   status` prints its SHA-256, which is the only record that a threshold has not
+   been quietly loosened — record it in the phase's ADR entry.
 4. **Write `tests/test_repo_consistency.py` first**, before any other test. Every
    defect in the 2026-09-07 review was cross-file drift, and this is the file
    that catches that class: Makefile gate names match `gates.yaml` keys in both

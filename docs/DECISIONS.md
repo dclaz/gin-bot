@@ -491,7 +491,8 @@ assertions hold.
 
 ## 2026-09-06 — /loop scoped to phases 0-3, with a mechanical guard
 
-**SUPERSEDED by the entry below.** The claim that `/loop` is not a built-in
+**SUPERSEDED twice.** First by the entry below, then by the 2026-09-07 entry
+dropping `/goal` and `make loop-guard` entirely. The claim that `/loop` is not a built-in
 command was wrong, and the primitive described here is `/goal`. The scope
 argument and the guard survive; the mechanism did not.
 
@@ -536,6 +537,11 @@ the working tree.
 ---
 
 ## 2026-09-06 — Correction: /loop is built in, and it is not the primitive we wanted
+
+**PARTLY SUPERSEDED** by the 2026-09-07 entry dropping `/goal` and
+`make loop-guard`. What survives: `/loop` is a time-driven watcher, its
+customisation point is `.claude/loop.md`, and scheduled wakeups fire only when
+Claude is idle.
 
 **Context.** The previous entry asserted that `/loop` is not a built-in Claude
 Code command and shipped `.claude/commands/loop.md` as a custom one. A user
@@ -842,3 +848,34 @@ architecture.
 **Consequence.** `make loop-guard` has nothing to hash until Phase 0 is green, so
 it is baselined then. An autonomous run started before that point is unguarded;
 CLAUDE.md now says so.
+
+---
+
+## 2026-09-07 — Dropped `/goal` and `make loop-guard`
+
+**Context.** Called for before Phase 0 starts: keep it simple.
+
+**Decision.** `/goal` and the `make loop-guard` / `make loop-reset` pair are
+removed from CLAUDE.md and from Phase 0's Makefile target list. The two ADR
+entries above that designed them are marked superseded rather than edited.
+
+**What this trades.** `loop-guard` existed to make one specific failure
+mechanically impossible: an autonomous run editing `configs/gates.yaml`, the
+`Makefile` or `tests/` to make a gate pass. With `/goal` gone, nothing is
+grinding unattended at a gate, so the failure it guarded against needs a human in
+the loop to occur — which is the reason it is safe to drop, and the reason it
+should come back if autonomous gate-chasing ever does.
+
+**What remains, and it is not nothing.** The prime directive still forbids
+editing a gate to make it pass, and still requires an ADR entry in the same
+commit to change a threshold. `make status` still prints the SHA-256 of
+`configs/gates.yaml`. That hash, recorded in each phase's ADR entry and compared
+on the next, is now the entire audit trail — honour system with a paper record
+rather than an enforced one. The incident recorded in the first superseded entry
+is worth remembering here: a tampered threshold committed by `git add -A` became
+HEAD, after which a hash comparison against the working tree saw nothing wrong.
+Compare against the ADR's recorded value, not against HEAD.
+
+**Kept.** `/loop` as a read-only run watcher (`.claude/loop.md`). It drives
+nothing, needs no guard, and is the practical way to observe a Phase 5 run
+without sitting on it.

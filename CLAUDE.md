@@ -30,34 +30,24 @@ how much room you have.
 
 The gates are the contract. Where a default and a gate disagree, the gate wins.
 
-## Autonomous runs
+## Watching a long run
 
-Two primitives, two jobs. Do not swap them.
+`/loop` re-runs a prompt on a timer. Use it to watch a training run, never to
+drive one: the watch prompt in `.claude/loop.md` is read-only — tail
+`runs/<run>/metrics.jsonl`, compare against `tripwires:` in `configs/gates.yaml`,
+report two lines, stop on a fire.
 
-- **`/goal` advances the build.** Completion-driven: it re-runs until a
-  condition holds. Scoped to Phases 0-3, because those gates are anchored to
-  things that cannot be argued with — the engine's own scoring, bit-exact
-  information hygiene, and exactly-computable Kuhn/Leduc exploitability. Phase 4
-  onward has uncalibrated `TODO` thresholds, runs over 30 minutes, and
-  interpretive questions; a loop pointed at a `TODO` fills it with whatever its
-  own run cleared.
-- **`/loop` watches a run.** Time-driven: the next turn starts when a timer
-  fires, not when a check passes. You do not loop the training, you loop the
-  *watching* of it. The watch prompt lives in `.claude/loop.md` — read-only:
-  tail `runs/<run>/metrics.jsonl`, compare against `tripwires:` in
-  `configs/gates.yaml`, report two lines, stop on a fire. Scheduled tasks fire
-  only when Claude is idle and missed fires are not caught up, so a foreground
-  training run blocks every wakeup — background long runs and observe the JSONL.
+Scheduled wakeups fire only when Claude is idle and missed fires are not caught
+up, so a foreground training run blocks every check. Background long runs and
+observe the JSONL.
 
-`/goal`'s evaluator reads the transcript; it does not run commands. It can be
-satisfied by a transcript that merely claims a gate passed, so actually run the
-gate and leave its output in the transcript.
+## Gate integrity
 
-`make loop-guard` hashes `configs/gates.yaml`, the `Makefile` and `tests/`, and
-fails if any changed. All three are created by Phase 0, so baseline it once
-Phase 0 is green — before that there is nothing to guard, and an autonomous run
-started earlier is unguarded. If a change is legitimate, review it, add an ADR entry,
-then `make loop-reset`.
+There is no mechanical guard on the gates. The rule in the prime directive holds
+on its own: never edit a gate to make it pass, and changing a threshold needs an
+ADR entry in `docs/DECISIONS.md` in the same commit. `make status` prints the
+SHA-256 of `configs/gates.yaml`, so compare it against the value recorded in the
+phase's ADR entry — that is the trail, and it is the whole of it.
 
 ## Stop and ask the human when
 
@@ -93,7 +83,6 @@ make gate-all     # every gate in order; the release check
 make status       # git sha, phase, last gate results, ratings, run provenance
 make board        # Trackio dashboard (local, no account)
 make elo          # refit ratings from the game record, print the ladder
-make loop-guard   # fail if a /loop run altered gates, tests or the Makefile
 ```
 
 To inspect a live or finished run without a human looking at a chart:
