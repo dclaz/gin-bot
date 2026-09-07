@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="790" viewBox="0 0 1200 790" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2f6f5e"/>
+    </marker>
+    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#9a6b3f"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="790" fill="#fbfbfa"/>
+
+  <text x="40" y="46" font-size="25" font-weight="650" fill="#1c1c1a">gin-bot — network architecture</text>
+  <text x="40" y="72" font-size="14.5" fill="#6b6b66">Three heads on a shared torso. 185 of 241 actions never reach the network.</text>
+  <line x1="40" y1="92" x2="1160" y2="92" stroke="#e3e2dd" stroke-width="1"/>
+
+  <!-- ENGINE -->
+  <text x="40" y="127" font-size="11" font-weight="700" fill="#6b6b66" letter-spacing="0.9">ENGINE</text>
+  <rect x="40" y="140" width="212" height="196" rx="9" fill="#fff" stroke="#d6d5d0"/>
+  <text x="58" y="167" font-size="14.5" font-weight="650" fill="#1c1c1a">OpenSpiel</text>
+  <text x="58" y="186" font-size="14.5" font-weight="650" fill="#1c1c1a">gin_rummy</text>
+  <line x1="58" y1="200" x2="234" y2="200" stroke="#ecebe6"/>
+  <text x="58" y="222" font-size="12.5" fill="#3d3d39">state.to_observation_</text>
+  <text x="58" y="239" font-size="12.5" fill="#3d3d39">struct(p).to_dict()</text>
+  <text x="58" y="263" font-size="12.5" fill="#3d3d39">+ the action stream</text>
+  <text x="58" y="292" font-size="11.5" fill="#8a8a84">no information-state</text>
+  <text x="58" y="308" font-size="11.5" fill="#8a8a84">tensor exists; the raw</text>
+  <text x="58" y="324" font-size="11.5" fill="#8a8a84">644-dim obs is not Markov</text>
+
+  <!-- TRACKER -->
+  <text x="292" y="127" font-size="11" font-weight="700" fill="#6b6b66" letter-spacing="0.9">FEATURES</text>
+  <rect x="292" y="140" width="268" height="330" rx="9" fill="#fff" stroke="#d6d5d0"/>
+  <text x="310" y="167" font-size="14.5" font-weight="650" fill="#1c1c1a">BeliefTracker</text>
+  <text x="310" y="185" font-size="11.5" fill="#8a8a84">per seat, per episode — accumulates</text>
+  <line x1="310" y1="198" x2="542" y2="198" stroke="#ecebe6"/>
+  <text x="310" y="220" font-size="12.5" fill="#3d3d39">own hand · melds · deadwood</text>
+  <text x="310" y="242" font-size="12.5" fill="#3d3d39">discard pile + order · stock · turn</text>
+  <text x="310" y="264" font-size="12.5" fill="#3d3d39">cost-to-discard · meld adjacency</text>
+  <rect x="303" y="278" width="246" height="62" rx="6" fill="#eef4f1"/>
+  <text x="314" y="298" font-size="12.5" font-weight="600" fill="#2f6f5e">opponent holds (took from pile)</text>
+  <text x="314" y="318" font-size="12.5" font-weight="600" fill="#2f6f5e">opponent declined (negative evidence)</text>
+  <text x="314" y="334" font-size="10.5" fill="#5c8a7c">the inference channel — the reason this exists</text>
+  <text x="310" y="362" font-size="12.5" fill="#3d3d39">provably out of play</text>
+  <text x="310" y="384" font-size="12.5" fill="#3d3d39">knock legality · distance to knock</text>
+  <line x1="310" y1="400" x2="542" y2="400" stroke="#ecebe6"/>
+  <text x="310" y="421" font-size="11.5" fill="#8a8a84">a floor, not a spec — gated by</text>
+  <text x="310" y="437" font-size="11.5" fill="#8a8a84">bit-exact hygiene under</text>
+  <text x="310" y="453" font-size="11.5" fill="#8a8a84">resample_from_infostate</text>
+
+  <!-- TORSO -->
+  <text x="600" y="127" font-size="11" font-weight="700" fill="#6b6b66" letter-spacing="0.9">TORSO</text>
+  <rect x="600" y="140" width="176" height="196" rx="9" fill="#fff" stroke="#d6d5d0"/>
+  <text x="618" y="167" font-size="14.5" font-weight="650" fill="#1c1c1a">Shared torso</text>
+  <line x1="618" y1="181" x2="758" y2="181" stroke="#ecebe6"/>
+  <text x="618" y="203" font-size="12.5" fill="#3d3d39">default: residual</text>
+  <text x="618" y="220" font-size="12.5" fill="#3d3d39">MLP over the flat</text>
+  <text x="618" y="237" font-size="12.5" fill="#3d3d39">feature vector</text>
+  <text x="618" y="266" font-size="11.5" fill="#8a8a84">a set or sequence</text>
+  <text x="618" y="282" font-size="11.5" fill="#8a8a84">encoder is a legitimate</text>
+  <text x="618" y="298" font-size="11.5" fill="#8a8a84">alternative — judged on</text>
+  <text x="618" y="314" font-size="11.5" fill="#8a8a84">gate-p4, belief/auc, perf/</text>
+
+  <!-- HEADS -->
+  <text x="824" y="127" font-size="11" font-weight="700" fill="#6b6b66" letter-spacing="0.9">HEADS — FIXED</text>
+  <rect x="824" y="140" width="336" height="104" rx="9" fill="#fff" stroke="#2f6f5e" stroke-width="1.5"/>
+  <text x="842" y="167" font-size="14.5" font-weight="650" fill="#1c1c1a">policy</text>
+  <text x="842" y="188" font-size="12.5" fill="#3d3d39">56 logits — draw upcard, draw stock,</text>
+  <text x="842" y="205" font-size="12.5" fill="#3d3d39">pass, knock, 52 discards</text>
+  <text x="842" y="228" font-size="11.5" fill="#8a8a84">legal mask applied to logits, before softmax</text>
+
+  <rect x="824" y="258" width="336" height="80" rx="9" fill="#fff" stroke="#2f6f5e" stroke-width="1.5"/>
+  <text x="842" y="285" font-size="14.5" font-weight="650" fill="#1c1c1a">value</text>
+  <text x="842" y="306" font-size="12.5" fill="#3d3d39">scalar, on scaled returns</text>
+  <text x="842" y="327" font-size="11.5" fill="#8a8a84">raw range is ±123 — scale it, or the critic blows up</text>
+
+  <rect x="824" y="352" width="336" height="118" rx="9" fill="#fff" stroke="#2f6f5e" stroke-width="1.5"/>
+  <text x="842" y="379" font-size="14.5" font-weight="650" fill="#1c1c1a">opponent-hand belief</text>
+  <text x="842" y="400" font-size="12.5" fill="#3d3d39">52-way multilabel, BCE vs the true hand</text>
+  <text x="842" y="422" font-size="11.5" fill="#8a8a84">auxiliary loss, not a plan component:</text>
+  <text x="842" y="438" font-size="11.5" fill="#8a8a84">shapes the torso, makes play inspectable,</text>
+  <text x="842" y="454" font-size="11.5" fill="#8a8a84">and a flat belief/auc is a tripwire</text>
+
+  <!-- ARROWS -->
+  <line x1="252" y1="238" x2="286" y2="238" stroke="#2f6f5e" stroke-width="2" marker-end="url(#a)"/>
+  <line x1="560" y1="238" x2="594" y2="238" stroke="#2f6f5e" stroke-width="2" marker-end="url(#a)"/>
+  <path d="M776 238 L800 238 L800 192 L818 192" fill="none" stroke="#2f6f5e" stroke-width="2" marker-end="url(#a)"/>
+  <path d="M776 238 L800 238 L800 298 L818 298" fill="none" stroke="#2f6f5e" stroke-width="2" marker-end="url(#a)"/>
+  <path d="M776 238 L800 238 L800 411 L818 411" fill="none" stroke="#2f6f5e" stroke-width="2" marker-end="url(#a)"/>
+
+  <!-- BYPASS -->
+  <line x1="40" y1="516" x2="1160" y2="516" stroke="#e3e2dd" stroke-width="1"/>
+  <text x="40" y="551" font-size="11" font-weight="700" fill="#9a6b3f" letter-spacing="0.9">BYPASS — NEVER REACHES THE NETWORK</text>
+  <rect x="40" y="566" width="300" height="96" rx="9" fill="#fdf8f2" stroke="#e0cdb5"/>
+  <text x="58" y="593" font-size="14.5" font-weight="650" fill="#1c1c1a">Meld &amp; layoff phase</text>
+  <text x="58" y="615" font-size="12.5" fill="#3d3d39">actions 56–240</text>
+  <text x="58" y="637" font-size="12.5" font-weight="600" fill="#9a6b3f">185 of 241 actions</text>
+  <text x="58" y="654" font-size="11.5" fill="#8a8a84">asked only after a knock</text>
+
+  <rect x="400" y="566" width="360" height="96" rx="9" fill="#fdf8f2" stroke="#e0cdb5"/>
+  <text x="418" y="593" font-size="14.5" font-weight="650" fill="#1c1c1a">Rule-based meld policy</text>
+  <text x="418" y="615" font-size="12.5" fill="#3d3d39">best_meld_group, then every layoff</text>
+  <text x="418" y="632" font-size="12.5" fill="#3d3d39">that reduces deadwood</text>
+  <text x="418" y="654" font-size="11.5" fill="#8a8a84">GinRummyUtils — do not write a meld solver</text>
+
+  <rect x="820" y="566" width="340" height="96" rx="9" fill="#fff" stroke="#d6d5d0"/>
+  <text x="838" y="593" font-size="14.5" font-weight="650" fill="#1c1c1a">A deterministic optimisation</text>
+  <text x="838" y="615" font-size="12.5" fill="#3d3d39">not a strategic choice — so it is solved,</text>
+  <text x="838" y="632" font-size="12.5" fill="#3d3d39">not learned</text>
+  <text x="838" y="654" font-size="11.5" fill="#8a8a84">Phase 6 ablation tests the sub-maximal-meld wrinkle</text>
+
+  <line x1="340" y1="614" x2="394" y2="614" stroke="#9a6b3f" stroke-width="2" marker-end="url(#b)"/>
+  <line x1="760" y1="614" x2="814" y2="614" stroke="#9a6b3f" stroke-width="2" marker-end="url(#b)"/>
+
+  <!-- FOOTER -->
+  <line x1="40" y1="706" x2="1160" y2="706" stroke="#e3e2dd" stroke-width="1"/>
+  <line x1="40" y1="735" x2="70" y2="735" stroke="#2f6f5e" stroke-width="2"/>
+  <text x="80" y="739" font-size="12" fill="#6b6b66">learned path</text>
+  <line x1="196" y1="735" x2="226" y2="735" stroke="#9a6b3f" stroke-width="2"/>
+  <text x="236" y="739" font-size="12" fill="#6b6b66">rule-based path</text>
+  <text x="40" y="766" font-size="11.5" fill="#8a8a84">The three heads and the bypass are fixed decisions. The torso and the feature set are defaults — see CLAUDE.md, "What is fixed, and what is a default".</text>
+</svg>

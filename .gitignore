@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.ruff_cache/
+.pytest_cache/
+
+# Run artifacts and telemetry
+runs/
+.trackio/
+
+# OS
+.DS_Store
+
+# Deliberately NOT ignored, though both are generated:
+#   src/ginrl/spiel_facts.py  — code imports engine constants from it
+#   docs/ENV_FACTS.md         — the human-readable twin
+# make facts-check regenerates and diffs them, so they must be in the tree.
