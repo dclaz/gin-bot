@@ -35,8 +35,8 @@ gate-p1: lint test
 gate-p2: lint test
 	$(UV) python scripts/gate_p2.py
 
-gate-p3:
-	@echo "not implemented (Phase 3 — trainer core)"; exit 1
+gate-p3: lint test
+	$(UV) python scripts/gate_p3.py
 
 gate-p4:
 	@echo "not implemented (Phase 4 — reduced gin rummy)"; exit 1

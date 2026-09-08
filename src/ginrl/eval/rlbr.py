@@ -19,6 +19,7 @@ import random
 from collections.abc import Callable
 from dataclasses import replace
 
+import pyspiel
 import torch
 
 from ginrl.algos.regpg import Magnet, make_batch, ppo_update, sample_actions
@@ -237,6 +238,63 @@ def run_br_phase(
         returns.extend(fixed_terminals)
     mean_return = sum(returns) / len(returns) if returns else 0.0
     return mean_return, redeal_seed, phase_steps, last_stats
+
+
+def simulate_return(
+    game: pyspiel.Game,
+    net: MaskedActorCritic,
+    seat: int,
+    fixed: FixedPolicy,
+    n_deals: int,
+    seed: int,
+) -> float:
+    """Final-iterate mean return of `net` (sampled) vs `fixed`, `n_deals` hands.
+
+    Training-time means average the exploring behaviour policy; calibration
+    compares final weights, so the gate measures here, not there. Both seats
+    observe via `information_state_tensor`, matching training.
+    """
+    net.eval()
+    total = 0.0
+    rng = random.Random(seed)
+    for _ in range(n_deals):
+        state = game.new_initial_state()
+        while not state.is_terminal():
+            if state.is_chance_node():
+                pairs = state.chance_outcomes()
+                total_p = sum(p for _, p in pairs)
+                roll, acc = rng.random() * total_p, 0.0
+                for action, prob in pairs:
+                    acc += prob
+                    if acc >= roll:
+                        state.apply_action(action)
+                        break
+                continue
+            player = state.current_player()
+            if player == seat:
+                obs = torch.tensor([state.information_state_tensor(seat)], dtype=torch.float32)
+                mask = torch.tensor([state.legal_actions_mask(seat)], dtype=torch.bool)
+                with torch.no_grad():
+                    logits, _, _ = net(obs, mask)
+                probs = torch.softmax(logits.squeeze(0), dim=-1).tolist()
+                legal = state.legal_actions()
+                total_p = sum(probs[a] for a in legal)
+                roll, acc = rng.random() * total_p, 0.0
+                for action in legal:
+                    acc += probs[action]
+                    if acc >= roll:
+                        state.apply_action(action)
+                        break
+            else:
+                state.apply_action(
+                    fixed(
+                        tuple(state.information_state_tensor(player)),
+                        tuple(bool(x) for x in state.legal_actions_mask(player)),
+                        rng,
+                    )
+                )
+        total += state.player_return(seat)
+    return total / n_deals if n_deals > 0 else 0.0
 
 
 def train_br(

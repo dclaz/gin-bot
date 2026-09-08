@@ -7,7 +7,14 @@ import random
 import torch
 
 from ginrl.config import Seeds, TrainerConfig
-from ginrl.eval.rlbr import attach_terminal, collect_br, train_br, uniform_fixed
+from ginrl.eval.exploitability import load_small_game
+from ginrl.eval.rlbr import (
+    attach_terminal,
+    collect_br,
+    simulate_return,
+    train_br,
+    uniform_fixed,
+)
 from ginrl.nets.actor_critic import MaskedActorCritic
 from ginrl.train.driver import RolloutStep, SmallGameVecEnv, net_config_for_game
 
@@ -67,6 +74,16 @@ def test_attach_terminal_credits_last_br_row() -> None:
     # A table the BR never acted on has no row to credit.
     assert attach_terminal(steps, last_br, 7, fixed_reward=1.0, gamma=0.99) is False
     assert steps[0].reward == 0.0 and steps[0].done is False
+
+
+def test_simulate_return_is_bounded_and_seeded() -> None:
+    torch.manual_seed(0)
+    game = load_small_game("kuhn_poker")
+    net = MaskedActorCritic(net_config_for_game("kuhn_poker", hidden=8, layers=1))
+    for seat in (0, 1):
+        mean = simulate_return(game, net, seat, uniform_fixed, 50, seed=0)
+        assert -2.0 <= mean <= 2.0  # Kuhn payoff range
+        assert mean == simulate_return(game, net, seat, uniform_fixed, 50, seed=0)
 
 
 def test_train_br_smoke_runs_and_scores_finite() -> None:

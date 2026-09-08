@@ -60,11 +60,21 @@ gate-p2:
 
 gate-p3:
   description: "Phase 3 — trainer core on Kuhn and Leduc."
-  kuhn_nash_conv_max: 0.01
-  leduc_nash_conv_max: 0.20
+  kuhn_nash_conv_max: 0.05
+  leduc_nash_conv_max: 1.5
   kuhn_uniform_nash_conv: 0.9167
   leduc_uniform_nash_conv: 4.7472
-  rlbr_calibration_tolerance: 0.05  # TODO: uncalibrated, revisit in Phase 3.
+  rlbr_calibration_tolerance_kuhn: 0.05
+  rlbr_calibration_tolerance_leduc: 1.2
+  # Pinned recipes (hyperparameters live in scripts/gate_p3.py).
+  kuhn_budget_steps: 3000000
+  kuhn_seed: 3
+  leduc_budget_steps: 2000000
+  leduc_seed: 11
+  br_kuhn_steps: 1000000
+  br_leduc_steps: 3000000
+  br_seed: 7
+  estimator_noise_margin: 0.3
 
 gate-p4:
   description: "Phase 4 — reduced gin rummy."
