@@ -164,3 +164,14 @@ class SmallGameVecEnv:
     def pending_returns(self, i: int) -> tuple[float, float] | None:
         """Terminal returns waiting on table i (None while the hand runs)."""
         return self._pending_returns[i]
+
+    def rng_states(self) -> list[object]:
+        """Opaque per-table chance-RNG states, for exact resume."""
+        return [rng.getstate() for rng in self._rngs]
+
+    def set_rng_states(self, states: list[object]) -> None:
+        """Restore chance-RNG states saved by `rng_states`."""
+        if len(states) != self.n_envs:
+            raise ValueError(f"rng state count {len(states)} != n_envs {self.n_envs}")
+        for rng, state in zip(self._rngs, states, strict=True):
+            rng.setstate(state)  # type: ignore[arg-type]

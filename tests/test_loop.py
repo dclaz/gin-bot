@@ -47,3 +47,79 @@ def test_loop_writes_record_trajectories_and_checkpoint(tmp_path: Path) -> None:
     fresh = MaskedActorCritic(net_config_for_game("kuhn_poker", hidden=8, layers=1))
     fresh.load_state_dict(state)  # checkpoint loads into a live net
     assert (run_dir / "config.json").exists()
+
+
+def _tiny_cfg() -> TrainerConfig:
+    return TrainerConfig(
+        total_steps=400,
+        n_envs=2,
+        rollout_len=8,
+        epochs=1,
+        minibatches=2,
+        eval_every=0,
+        seeds=Seeds(master=5),
+    )
+
+
+def _run_chain(tmp_path: Path, tag: str, resume_at: int | None) -> list[Path]:
+    """One straight run [dir], or two chained runs [part_a, part_b]."""
+    cfg = _tiny_cfg()
+    first = tmp_path / f"{tag}-a"
+    if resume_at is None:
+        train_selfplay("kuhn_poker", cfg, 5, torch.device("cpu"), first, hidden=8, layers=1)
+        return [first]
+    part = TrainerConfig(
+        total_steps=resume_at,
+        n_envs=2,
+        rollout_len=8,
+        epochs=1,
+        minibatches=2,
+        eval_every=0,
+        seeds=Seeds(master=5),
+    )
+    train_selfplay("kuhn_poker", part, 5, torch.device("cpu"), first, hidden=8, layers=1)
+    second = tmp_path / f"{tag}-b"
+    train_selfplay(
+        "kuhn_poker",
+        cfg,
+        5,
+        torch.device("cpu"),
+        second,
+        hidden=8,
+        layers=1,
+        resume=first / "checkpoint.pt",
+    )
+    return [first, second]
+
+
+def _read_final(run_dir: Path) -> dict[str, object]:
+    return torch.load(run_dir / "final.pt", weights_only=True)
+
+
+def _assert_identical_weights(a: Path, b: Path) -> None:
+    sa, sb = _read_final(a), _read_final(b)
+    assert sa.keys() == sb.keys()
+    for key in sa:
+        assert torch.equal(sa[key], sb[key]), f"param {key} differs"
+
+
+def _traj_rows(dirs: list[Path]) -> bytes:
+    """Step rows of chained trajectory files (each file's header skipped)."""
+    out = b""
+    for d in dirs:
+        lines = (d / "trajectories.jsonl").read_bytes().splitlines(keepends=True)
+        out += b"".join(lines[1:])
+    return out
+
+
+def test_resume_is_bit_identical_to_uninterrupted(tmp_path: Path) -> None:
+    (straight,) = _run_chain(tmp_path, "straight", None)
+    first, resumed = _run_chain(tmp_path, "resumed", 200)
+    _assert_identical_weights(straight, resumed)
+    # Chained trajectory rows (headers excluded: one per file) refit identically.
+    assert _traj_rows([straight]) == _traj_rows([first, resumed])
+    for name in ("metrics.jsonl", "trajectories.jsonl", "final.pt", "checkpoint.pt"):
+        assert (resumed / name).exists()
+    # Same seed twice: the gate's determinism check in miniature.
+    (again,) = _run_chain(tmp_path, "again", None)
+    _assert_identical_weights(straight, again)

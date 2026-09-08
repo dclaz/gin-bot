@@ -32,11 +32,14 @@ def toy_steps() -> tuple[list[RolloutStep], list[float]]:
 
 
 def test_gae_and_mc_match_hand_computation() -> None:
+    # Zero-sum stream: seat 0 moves (r=0), then seat 1 moves and wins (+1),
+    # so seat 0's return is -1 and seat 1's is +1. Cross-seat rows must be
+    # negated, not summed raw — that sign flip is the regression under test.
     steps, values = toy_steps()
     adv, ret = advantages(steps, values, gamma=1.0, lam=1.0, mode="mc")
-    assert adv == [1.0, 1.0] and ret == [1.0, 1.0]
+    assert adv == [-1.0, 1.0] and ret == [-1.0, 1.0]
     adv, ret = advantages(steps, values, gamma=1.0, lam=1.0, mode="gae")
-    assert adv == [1.0, 1.0] and ret == [1.0, 1.0]
+    assert adv == [-1.0, 1.0] and ret == [-1.0, 1.0]
     adv, _ = advantages(steps, values, gamma=1.0, lam=0.0, mode="gae")
     assert adv == pytest.approx([0.0, 1.0])  # TD(0): no bootstrapped credit yet
     with pytest.raises(ValueError):
@@ -48,7 +51,7 @@ def test_advantages_split_episodes_per_table() -> None:
     other = RolloutStep(1, (0.5, 0.0, 0.0, 0.0), (True, True), 0, 2.0, True, 0, 1)
     adv, ret = advantages([*steps, other], [*values, 0.0], 1.0, 1.0, "mc")
     assert (adv[2], ret[2]) == (2.0, 2.0)  # table 1 is its own episode
-    assert adv[0] == 1.0  # table 0 unaffected by table 1's reward
+    assert adv[0] == -1.0  # seat 0 lost the hand seat 1 won
 
 
 def test_linear_factor_boundaries() -> None:
@@ -84,6 +87,30 @@ def test_uniform_magnet_kl_is_zero_at_uniform() -> None:
     mask = torch.ones(3, 2, dtype=torch.bool)
     logits, _, _ = net(obs, mask)
     assert torch.allclose(magnet.kl(logits, mask, net, obs), torch.zeros(3), atol=1e-6)
+
+
+def test_kl_term_differentiates_policy_not_magnet() -> None:
+    """The KL gradient is the regulariser: it must reach the online net.
+
+    Regression test: kl() used to run under no_grad with detached logits,
+    so every magnet mode trained exactly like the reg_coef=0 control and
+    the ablation guard could not have caught anything.
+    """
+    for mode, kwargs in (
+        (MAGNET_UNIFORM, {}),
+        (MAGNET_SNAPSHOT, {"snapshot_every": 1}),
+        (MAGNET_EMA, {}),
+    ):
+        net = tiny_net()
+        magnet = Magnet(net, tiny_cfg(magnet_mode=mode, **kwargs))  # type: ignore[arg-type]
+        obs = torch.randn(4, 4)
+        mask = torch.ones(4, 2, dtype=torch.bool)
+        logits, _, _ = net(obs, mask)
+        magnet.kl(logits, mask, net, obs).mean().backward()
+        assert net.policy_head.weight.grad is not None
+        assert bool((net.policy_head.weight.grad != 0).any())
+        if magnet.ref is not None:
+            assert all(p.grad is None for p in magnet.ref.parameters())
 
 
 def test_snapshot_refreshes_and_ema_drifts() -> None:
