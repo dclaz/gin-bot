@@ -107,6 +107,14 @@ class SmallGameVecEnv:
         obs, mask, _ = self._obs_for(i)
         return obs, mask
 
+    def acting_seat(self, i: int) -> int | None:
+        """Seat to act on table i, or None if the hand just ended."""
+        state = self._states[i]
+        if state.is_terminal():
+            return None
+        seat = state.current_player()
+        return seat if seat >= 0 else None
+
     def _obs_for(self, i: int) -> tuple[tuple[float, ...], tuple[bool, ...], int]:
         state = self._states[i]
         seat = state.current_player()
