@@ -14,8 +14,10 @@ both seats' BR gains over the target's own seat values.
 
 from __future__ import annotations
 
+import copy
 import random
 from collections.abc import Callable
+from dataclasses import replace
 
 import torch
 
@@ -24,14 +26,31 @@ from ginrl.config import Seeds, TrainerConfig
 from ginrl.nets.actor_critic import MaskedActorCritic
 from ginrl.train.driver import RolloutStep, SmallGameVecEnv
 
-# Fixed opponent: maps (legal mask) to an action. Closes over its own RNG.
-FixedPolicy = Callable[[tuple[bool, ...], random.Random], int]
+# Fixed opponent: maps (obs, legal mask) to an action. Closes over its own
+# RNG (and, for a frozen net, its own weights and sampling generator).
+FixedPolicy = Callable[[tuple[float, ...], tuple[bool, ...], random.Random], int]
 
 
-def uniform_fixed(mask: tuple[bool, ...], rng: random.Random) -> int:
+def uniform_fixed(obs: tuple[float, ...], mask: tuple[bool, ...], rng: random.Random) -> int:
     """Uniform random over legal actions (the calibration target)."""
     legal = [a for a, ok in enumerate(mask) if ok]
     return rng.choice(legal)
+
+
+def net_fixed(net: MaskedActorCritic, device: torch.device, seed: int) -> FixedPolicy:
+    """Freeze `net` as a sampling opponent (alternating-BR phases)."""
+    frozen = copy.deepcopy(net).requires_grad_(False).to(device).eval()
+    gen = torch.Generator(device="cpu").manual_seed(seed)
+
+    def frozen_policy(obs: tuple[float, ...], mask: tuple[bool, ...], rng: random.Random) -> int:
+        obs_t = torch.tensor([obs], dtype=torch.float32, device=device)
+        mask_t = torch.tensor([mask], dtype=torch.bool, device=device)
+        with torch.no_grad():
+            logits, _, _ = frozen(obs_t, mask_t)
+        probs = torch.softmax(logits.cpu(), dim=-1)
+        return int(torch.multinomial(probs, 1, generator=gen).squeeze())
+
+    return frozen_policy
 
 
 @torch.no_grad()
@@ -54,7 +73,7 @@ def _choose_actions(
     chosen: dict[int, int] = {}
     if not learn_slot:
         for k, i in enumerate(live):
-            chosen[i] = fixed(seen[k][1], fixed_rng)
+            chosen[i] = fixed(seen[k][0], seen[k][1], fixed_rng)
         return chosen, {}, torch.zeros(0), torch.zeros(0)
     obs = torch.tensor([o for o, _ in seen], dtype=torch.float32, device=device)
     masks = torch.tensor([m for _, m in seen], dtype=torch.bool, device=device)
@@ -65,8 +84,34 @@ def _choose_actions(
         if k in learn_slot:
             chosen[i] = int(br_actions[learn_slot[k]])
         else:
-            chosen[i] = fixed(seen[k][1], fixed_rng)
+            chosen[i] = fixed(seen[k][0], seen[k][1], fixed_rng)
     return chosen, learn_slot, br_logp, value
+
+
+def attach_terminal(
+    steps: list[RolloutStep],
+    last_br: dict[int, int],
+    table: int,
+    fixed_reward: float,
+    gamma: float,
+) -> bool:
+    """Credit a fixed-ended hand to the BR's last row of that hand.
+
+    The BR's gradient rows would otherwise end mid-hand with reward 0 and
+    `done=False`: the hand's terminal reward would never enter GAE, and the
+    table stream would bootstrap across the hand boundary into the next
+    hand. Returns True when a row was credited (False: the BR never acted
+    in this hand, so there is no row to learn from).
+    """
+    if table not in last_br:
+        return False
+    j = last_br.pop(table)
+    steps[j] = replace(
+        steps[j],
+        reward=steps[j].reward + gamma * -fixed_reward,
+        done=True,
+    )
+    return True
 
 
 @torch.no_grad()
@@ -81,16 +126,26 @@ def collect_br(
     device: torch.device,
     base_seed: int,
     redeal_seed: int,
-) -> tuple[list[RolloutStep], list[float], list[float], int]:
+    gamma: float,
+) -> tuple[list[RolloutStep], list[float], list[float], int, list[float]]:
     """Rollout where only `br_seat` learns; the other seat plays `fixed`.
 
-    Returns (BR-seat steps, behaviour logps, behaviour values, next seed).
-    The fixed seat's rows are discarded — they carry no gradient for the BR.
+    Returns (BR-seat steps, behaviour logps, behaviour values, next seed,
+    BR returns from hands the BR never acted in). Every hand the BR acted
+    in ends in a BR row with `done=True` carrying the full terminal return
+    (hands the fixed seat closes are credited via `attach_terminal`, one
+    ply discounted); `fixed_terminals` covers only hands with no BR row,
+    so the two tilings together score every hand exactly once. Without the
+    back-fill, the BR mean — and worse, its GAE targets — would condition
+    on "BR moves last", a lying lens (a slowplaying BR moves last exactly
+    when it wins).
     """
     env.reset_all(base_seed=base_seed)
     steps: list[RolloutStep] = []
     logps: list[float] = []
     values: list[float] = []
+    fixed_terminals: list[float] = []
+    last_br: dict[int, int] = {}
     net.eval()
     while len(steps) < n_rows:
         live = [i for i in range(env.n_envs) if env.pending_returns(i) is None]
@@ -105,17 +160,83 @@ def collect_br(
         rollout = env.act([chosen[i] if i in at else None for i in range(env.n_envs)])
         for step in rollout.steps:
             if step.seat != br_seat:
+                if step.done:
+                    # By zero-sum the BR's return is the negation: credit
+                    # the BR's last row so GAE sees the terminal. Only
+                    # hands with no BR row at all land in fixed_terminals,
+                    # so the two tilings score every hand exactly once.
+                    if not attach_terminal(steps, last_br, step.table, step.reward, gamma):
+                        fixed_terminals.append(-step.reward)
                 continue
             k = at[step.table]
             steps.append(step)
             logps.append(float(br_logp[learn_slot[k]]))
             values.append(float(value[k].cpu()))
+            if step.done:
+                last_br.pop(step.table, None)
+            else:
+                last_br[step.table] = len(steps) - 1
         for i in range(env.n_envs):
             if env.pending_returns(i) is not None:
                 redeal_seed += 1
                 env.reset_table(i, redeal_seed)
+                last_br.pop(i, None)
     net.train()
-    return steps, logps, values, redeal_seed
+    return steps, logps, values, redeal_seed, fixed_terminals
+
+
+def run_br_phase(
+    env: SmallGameVecEnv,
+    net: MaskedActorCritic,
+    optimizer: torch.optim.Optimizer,
+    magnet: Magnet,
+    br_seat: int,
+    fixed: FixedPolicy,
+    fixed_rng: random.Random,
+    cfg: TrainerConfig,
+    gen: torch.Generator,
+    device: torch.device,
+    base_seed: int,
+    redeal_seed: int,
+    budget_steps: int,
+    steps_done: int,
+) -> tuple[float, int, int, dict[str, float]]:
+    """Train `br_seat` against `fixed` for `budget_steps` decisions.
+
+    Carries the caller's net/optimizer/magnet (shared across alternating
+    phases). Returns (true per-hand BR mean, next redeal seed, phase steps,
+    last update stats).
+    """
+    phase_steps, deal_round, returns = 0, 0, []
+    last_stats: dict[str, float] = {}
+    while phase_steps < budget_steps:
+        steps, logps, values, redeal_seed, fixed_terminals = collect_br(
+            env,
+            net,
+            br_seat,
+            fixed,
+            fixed_rng,
+            cfg.batch_size,
+            gen,
+            device,
+            base_seed + deal_round,
+            redeal_seed,
+            cfg.gamma,
+        )
+        deal_round += 1
+        if not steps:
+            continue
+        batch = make_batch(steps, logps, values, cfg, device)
+        last_stats = ppo_update(net, optimizer, batch, cfg, magnet, gen, steps_done + phase_steps)
+        phase_steps += len(steps)
+        # Every hand the BR acted in ends in a BR done-row (fixed-closed
+        # hands are back-filled); fixed_terminals holds only hands with no
+        # BR row. Together they tile all hands, so this mean is the BR's
+        # true per-hand return, not the BR-moves-last conditional.
+        returns.extend(s.reward for s in steps if s.done)
+        returns.extend(fixed_terminals)
+    mean_return = sum(returns) / len(returns) if returns else 0.0
+    return mean_return, redeal_seed, phase_steps, last_stats
 
 
 def train_br(
@@ -136,28 +257,20 @@ def train_br(
     magnet = Magnet(net, cfg)
     gen = torch.Generator().manual_seed(master_seed + 1)
     fixed_rng = seeds.spawn(f"rlbr-fixed-{br_seat}")
-    base_seed = master_seed * 1_000
-    redeal_seed = master_seed * 1_000_000 + 7
-    steps_done, deal_round, returns = 0, 0, []
-    while steps_done < cfg.total_steps:
-        steps, logps, values, redeal_seed = collect_br(
-            env,
-            net,
-            br_seat,
-            fixed,
-            fixed_rng,
-            cfg.batch_size,
-            gen,
-            device,
-            base_seed + deal_round,
-            redeal_seed,
-        )
-        deal_round += 1
-        if not steps:
-            continue
-        batch = make_batch(steps, logps, values, cfg, device)
-        ppo_update(net, optimizer, batch, cfg, magnet, gen, steps_done)
-        steps_done += len(steps)
-        returns.extend(s.reward for s in steps if s.done)
-    mean_return = sum(returns) / len(returns) if returns else 0.0
+    mean_return, _, _, _ = run_br_phase(
+        env,
+        net,
+        optimizer,
+        magnet,
+        br_seat,
+        fixed,
+        fixed_rng,
+        cfg,
+        gen,
+        device,
+        base_seed=master_seed * 1_000,
+        redeal_seed=master_seed * 1_000_000 + 7,
+        budget_steps=cfg.total_steps,
+        steps_done=0,
+    )
     return net, mean_return

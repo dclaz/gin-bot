@@ -203,6 +203,14 @@ Verified by running OpenSpiel 2.0.2. Re-verify on the M4 via `make probe`;
    accounting files it under no-knock endings all the same. Any agent that
    over-takes from the pile will "wall" every game without ever touching the
    stock — check the action log, not the stock, when walls spike.
+14. **Simultaneous shared-net self-play falls into long-lived bad cycles.**
+   On Kuhn a seed landed in an inverted pattern (bluff J always, slowplay K
+   always) and sat at NashConv ~0.5 for ~8M steps before escaping; regimens
+   that avoid the trap floor above it (uniform magnet: Kuhn ~0.03-0.10,
+   Leduc ~0.7-1.0 across seeds). A single seed's settle number means nothing
+   and last-iterate minima do not hold — pin recipe+seed from a multi-seed
+   comparison, and distrust any ladder number from a lucky init (a seed whose
+   init entropy/NC starts near equilibrium never had to navigate there).
 14. **A failed take test must route to stock, not to `legal[0]`.** At a Draw
    phase the legal actions sort 52 (pile) before 53 (stock), so a fallthrough
    `return legal[0]` takes the upcard unconditionally. Worse, a draw test that

@@ -66,34 +66,49 @@ def advantages(
     Rows arrive round-major; grouping by `table` recovers each table's
     chronological stream, and `done` splits it into episodes. Standardising
     happens in `make_batch`, not here, so these are raw.
+
+    Zero-sum perspective rule (two-player games only): the critic predicts
+    the ACTING seat's return, so a value or reward from the other seat
+    estimates the negation. Everything is converted to the seat-0
+    perspective, accumulated there, and converted back — bootstrapping or
+    summing raw across a seat change silently flips the sign of the
+    objective (this exact bug once drove self-play to NashConv 1.0 while
+    single-seat best-response training worked fine).
     """
     if mode not in ("gae", "mc"):
         raise ValueError(f"advantage mode must be 'gae' or 'mc', got {mode!r}")
     streams: dict[int, list[int]] = {}
     for row, step in enumerate(steps):
+        if step.seat not in (0, 1):
+            raise ValueError(f"advantages need a 2-player zero-sum stream, got seat {step.seat}")
         streams.setdefault(step.table, []).append(row)
     adv = [0.0] * len(steps)
     ret = [0.0] * len(steps)
     for rows in streams.values():
-        gae, mc = 0.0, 0.0
+        gae0, mc0 = 0.0, 0.0  # seat-0-perspective accumulators
         for pos in range(len(rows) - 1, -1, -1):
             row = rows[pos]
-            reward = steps[row].reward
+            sign = 1.0 if steps[row].seat == 0 else -1.0
+            reward0 = sign * steps[row].reward
+            value0 = sign * values[row]
             nonterminal = 0.0 if steps[row].done else 1.0
             # Same table re-deals only after done, so the next row in the
             # stream is the same episode unless the buffer cut it mid-hand
             # (then bootstrap 0: the standard fixed-batch truncation bias).
             if steps[row].done or pos + 1 == len(rows):
-                next_value = 0.0
+                next0 = 0.0
             else:
-                next_value = values[rows[pos + 1]]
-            mc = reward + gamma * nonterminal * mc
+                nxt = rows[pos + 1]
+                next_sign = 1.0 if steps[nxt].seat == 0 else -1.0
+                next0 = next_sign * values[nxt]
+            mc0 = reward0 + gamma * nonterminal * mc0
             if mode == "mc":
-                adv[row], ret[row] = mc - values[row], mc
+                adv0, ret0 = mc0 - value0, mc0
             else:
-                delta = reward + gamma * nonterminal * next_value - values[row]
-                gae = delta + gamma * lam * nonterminal * gae
-                adv[row], ret[row] = gae, gae + values[row]
+                delta0 = reward0 + gamma * nonterminal * next0 - value0
+                gae0 = delta0 + gamma * lam * nonterminal * gae0
+                adv0, ret0 = gae0, gae0 + value0
+            adv[row], ret[row] = sign * adv0, sign * ret0
     return adv, ret
 
 
@@ -135,11 +150,15 @@ class Magnet:
             self.ref = copy.deepcopy(net).requires_grad_(False)
         self.n_updates = 0
 
-    @torch.no_grad()
     def kl(
         self, logits: torch.Tensor, mask: torch.Tensor, net: MaskedActorCritic, obs: torch.Tensor
     ) -> torch.Tensor:
-        """Per-row KL(pi || magnet) over legal actions."""
+        """Per-row KL(pi || magnet) over legal actions.
+
+        Differentiable in the online `logits` (the KL gradient is the
+        regulariser). The snapshot/EMA reference forward is detached —
+        the magnet is a target, not a co-learner.
+        """
         logp = torch.log_softmax(logits, dim=-1)
         pi = logp.exp()
         if self.mode == MAGNET_UNIFORM:
@@ -147,9 +166,31 @@ class Magnet:
             n_legal = mask.sum(dim=-1, keepdim=True).clamp_min(1).to(logits.dtype)
             return ((pi * logp).sum(dim=-1, keepdim=True) + n_legal.log()).squeeze(-1)
         assert self.ref is not None
-        ref_logits, _, _ = self.ref(obs, mask)
+        with torch.no_grad():
+            ref_logits, _, _ = self.ref(obs, mask)
         ref_logp = torch.log_softmax(ref_logits, dim=-1)
         return (pi * (logp - ref_logp)).sum(dim=-1)
+
+    def snapshot_state(self) -> dict[str, object]:
+        """Opaque magnet state for exact resume (update count + reference)."""
+        return {
+            "n_updates": self.n_updates,
+            "ref": self.ref.state_dict() if self.ref is not None else None,
+        }
+
+    def restore_state(self, state: dict[str, object], net: MaskedActorCritic) -> None:
+        """Restore magnet state saved by `snapshot_state`.
+
+        Cross-mode resume keeps the constructor's reference: a uniform
+        checkpoint carries no ref, so resuming it under snapshot/EMA starts
+        from a fresh anchor at the resumed weights (not a null magnet);
+        resuming a snapshot checkpoint under uniform drops the stale
+        reference (a uniform magnet has no anchor by definition).
+        """
+        self.n_updates = int(state["n_updates"])  # type: ignore[arg-type]
+        ref = state["ref"]
+        if self.ref is not None and ref is not None:
+            self.ref.load_state_dict(ref)  # type: ignore[arg-type]
 
     @torch.no_grad()
     def post_update(self, net: MaskedActorCritic) -> None:
@@ -185,6 +226,9 @@ def collect(
 ) -> tuple[list[RolloutStep], list[float], list[float], int]:
     """Self-play rollout: both seats share `net`.
 
+    Each call re-deals every table from `base_seed` (table i's stream is
+    base_seed + i), so batches are independent given the seeds and a
+    checkpoint needs no table state — only counters and RNG states.
     Returns (steps, behaviour logps, behaviour values, next redeal seed) so
     the caller can chain collections without reusing a chance stream.
     """
@@ -253,7 +297,7 @@ def ppo_update(
             ).mean()
             vf = functional.mse_loss(value, batch.ret[idx])
             aux_loss = functional.cross_entropy(aux, batch.opp[idx])
-            kl = magnet.kl(logits.detach(), batch.mask[idx], net, batch.obs[idx]).mean()
+            kl = magnet.kl(logits, batch.mask[idx], net, batch.obs[idx]).mean()
             loss = -pg + cfg.vf_coef * vf + cfg.aux_coef * aux_loss + reg * kl
             optimizer.zero_grad()
             loss.backward()
