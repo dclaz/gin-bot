@@ -56,10 +56,12 @@ class MatchConfig:
 
 
 # Magnet modes for the regularised learner (IMPLEMENTATION_PLAN Phase 3).
-MAGNET_NONE = "none"
+# `uniform` is PPO with an entropy bonus (KL to uniform, up to a constant);
+# `snapshot` is MMD proper; `ema` tracks the learner's own parameters.
+MAGNET_UNIFORM = "uniform"
 MAGNET_EMA = "ema"
 MAGNET_SNAPSHOT = "snapshot"
-MAGNET_MODES = (MAGNET_NONE, MAGNET_EMA, MAGNET_SNAPSHOT)
+MAGNET_MODES = (MAGNET_UNIFORM, MAGNET_EMA, MAGNET_SNAPSHOT)
 
 # Environments the trainer supports. Kuhn/Leduc calibrate the learner;
 # gin_reduced is the bridge to full gin (Phase 4+).
@@ -87,9 +89,8 @@ class TrainerConfig:
     gae_lambda: float = 0.95
     clip_eps: float = 0.2
     vf_coef: float = 0.5
-    ent_coef: float = 0.01
     reg_coef: float = 0.0
-    magnet_mode: str = MAGNET_NONE
+    magnet_mode: str = MAGNET_UNIFORM
     magnet_ema_decay: float = 0.999
     snapshot_every: int = 0
     eval_every: int = 0
