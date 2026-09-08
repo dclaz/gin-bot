@@ -90,6 +90,9 @@ class TrainerConfig:
     clip_eps: float = 0.2
     vf_coef: float = 0.5
     reg_coef: float = 0.0
+    aux_coef: float = 0.1
+    advantage: str = "gae"  # "gae" | "mc" (estimator guard decides)
+    anneal: str = "none"  # "none" | "linear" (lr and reg_coef -> 0)
     magnet_mode: str = MAGNET_UNIFORM
     magnet_ema_decay: float = 0.999
     snapshot_every: int = 0
@@ -113,6 +116,10 @@ class TrainerConfig:
             raise ValueError(f"magnet_ema_decay must be in [0, 1], got {self.magnet_ema_decay}")
         if self.magnet_mode == MAGNET_SNAPSHOT and self.snapshot_every <= 0:
             raise ValueError("snapshot magnet needs snapshot_every > 0")
+        if self.advantage not in ("gae", "mc"):
+            raise ValueError(f"advantage must be 'gae' or 'mc', got {self.advantage!r}")
+        if self.anneal not in ("none", "linear"):
+            raise ValueError(f"anneal must be 'none' or 'linear', got {self.anneal!r}")
 
     @property
     def batch_size(self) -> int:

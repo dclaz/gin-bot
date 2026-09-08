@@ -27,6 +27,7 @@ DECK_SIZES = {"kuhn_poker": 3, "leduc_poker": 6}
 class RolloutStep:
     """One decision node as the learner consumes it."""
 
+    table: int  # sub-env id; groups rows into per-episode streams for GAE
     obs: tuple[float, ...]
     mask: tuple[bool, ...]
     action: int
@@ -101,6 +102,11 @@ class SmallGameVecEnv:
             self._dealt[i].append(chosen)
             state.apply_action(chosen)
 
+    def observe(self, i: int) -> tuple[tuple[float, ...], tuple[bool, ...]]:
+        """Current (obs, mask) for table i. Only valid on decision nodes."""
+        obs, mask, _ = self._obs_for(i)
+        return obs, mask
+
     def _obs_for(self, i: int) -> tuple[tuple[float, ...], tuple[bool, ...], int]:
         state = self._states[i]
         seat = state.current_player()
@@ -132,11 +138,11 @@ class SmallGameVecEnv:
             if state.is_terminal():
                 returns = state.returns()
                 rollout.steps.append(
-                    RolloutStep(obs, mask, action, float(returns[seat]), True, seat, opp_card)
+                    RolloutStep(i, obs, mask, action, float(returns[seat]), True, seat, opp_card)
                 )
                 self._pending_returns[i] = (float(returns[0]), float(returns[1]))
             else:
-                rollout.steps.append(RolloutStep(obs, mask, action, 0.0, False, seat, opp_card))
+                rollout.steps.append(RolloutStep(i, obs, mask, action, 0.0, False, seat, opp_card))
         return rollout
 
     def reset_table(self, i: int, seed: int) -> None:
