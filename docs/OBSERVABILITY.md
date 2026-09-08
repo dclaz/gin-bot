@@ -61,20 +61,38 @@ new one: an artifact without provenance is deleted, not debugged.
 ### `opt/` — is the optimiser being driven correctly
 `opt/lr`, `opt/grad_norm`, `opt/grad_norm_clipped_frac`, `opt/param_norm`,
 `opt/update_ratio` (update norm over parameter norm). Distinct from `loss/`:
-these describe the optimiser's own state, not the objective.
+these describe the optimiser's own state, not the objective. Per-head gradient
+norms (`opt/grad_norm/<head>`, raw and weighted losses per head under `loss/`)
+show an auxiliary head capturing the shared encoder before the aggregate does.
+`opt/is_ratio_p50/p90/p99` track the importance-correction distribution when
+consuming stale trajectories; mass clipped nearly everywhere is the policy-lag
+tripwire, not a clipping constant to raise.
 
 ### `policy/` — is it still a policy
 `policy/entropy`, `policy/entropy_normalised` (divided by `log(n_legal)`, so it
 is comparable across states with different legal-action counts),
 `policy/effective_action_count` (perplexity), `policy/max_action_share`.
+Entropy is also logged per phase (`policy/entropy_<draw,discard,knock,...>`):
+a two-action draw head and a 52-way discard head have different maximum
+entropies, and one collapsing while the aggregate looks healthy is invisible
+otherwise.
 
 ### `value/` — is the critic learning
 `value/explained_variance`, `value/mean`, `value/std`, `value/return_std`.
+From Phase 5 the match head adds `value/match_nll` and `value/match_brier`
+over win/draw/loss forecasts; audit both by score bucket, since low global
+error with poor values near 100 is the failure that loses matches.
 
 ### `belief/` — is the history reaching the network
 `belief/auc`, `belief/brier`, `belief/top1_precision` — how often the card the
 belief head is most confident about really is in the opponent's hand. A flat AUC
 means `BeliefTracker` features are not being used, which is a tripwire.
+Calibration is scored only over legally possible unseen cards. The joint
+decoder adds `belief/hand_nll` (complete-hand negative log likelihood),
+`belief/recall_at_k`, `belief/posterior_ess` (effective sample size of the
+particle weights) and `belief/decision_value` — paired score with learned
+versus uniform beliefs, which is the ablation that says whether dependencies
+buy decisions rather than likelihood.
 
 ### `ratings/` — is it getting better
 
@@ -124,9 +142,20 @@ shows the equilibrium style *emerging* rather than being read off at the end.
 Plot `style/gin_rate` against `ratings/current_elo` and the knock-early-versus-gin
 answer draws itself.
 
+Phase 5+ profiler extensions: `style/pickup_precision` (accepted upcards that
+enter the eventual best meld group) and match-level stats beside the rates
+(match length, comeback rate, win probability by starting score). Defensive
+discard quality is evaluated against posterior opponent hands, so it lives
+with the belief metrics, not here.
+
 ### `perf/` — is the machine being used
-`perf/env_steps_per_sec`, `perf/updates_per_sec`, `perf/actor_wait_frac`,
-`perf/learner_wait_frac`, `perf/update_ms`, `perf/logging_overhead_frac`.
+`perf/env_steps_per_sec`, `perf/decisions_per_sec`, `perf/updates_per_sec`,
+`perf/actor_wait_frac`, `perf/learner_wait_frac`, `perf/update_ms`,
+`perf/inference_latency_p50/p95/p99`, `perf/policy_lag`,
+`perf/host_ram_gb`, `perf/device_mem_gb`, `perf/logging_overhead_frac`.
+Search work, when it exists, reports `perf/search_fallback_rate` (share of
+positions solved by the fallback policy) beside its traversal/particle
+budgets; strength is always quoted at a fixed latency budget.
 
 ### `tripwire/` — how close to the edge
 Every tripwire from IMPLEMENTATION_PLAN.md is logged as *two* series: its current

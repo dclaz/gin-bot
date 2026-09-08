@@ -110,6 +110,11 @@ cycling. Three settings of ρ give three published algorithms from one codebase:
 power-law schedule is what the superhuman Stratego result used, and it avoids
 premature entropy collapse while allowing stronger convergence late).
 
+Advantages default to GAE, but that is a baseline, not a conclusion: recent
+work questions GAE in imperfect-information self-play, and Phase 3 settles it
+with a GAE-versus-Monte-Carlo comparison on Leduc exploitability, where the
+truth is computable. Whichever wins there is the estimator gin uses.
+
 This is a deliberate scope decision. We are **not** porting R-NaD from JAX, and
 we are **not** implementing Deep CFR/ESCHER. The evidence says the extra
 machinery does not buy performance, and a JAX toolchain on Apple Silicon is a
@@ -139,6 +144,7 @@ bake-off on the reduced game, where a run is minutes, over at least:
 | **B** | set encoder over card embeddings (hand, pile) | does permutation structure help? |
 | **C** | sequence encoder over the action history | can the net *learn* the inference channel it is currently handed? |
 | **D** | MLP on the raw 644-dim observation | the control: is the hand-engineering earning its keep at all? |
+| **E** | hybrid: GRU prefix plus exact recent-event attention over a set hand encoder | does attention over precise evidence beat pure recurrence, at its latency cost? |
 
 D is the important one and the one a plan like this usually omits. The
 history-necessity gate in Phase 1 tests the feature set with a *probe
@@ -148,9 +154,10 @@ not in the write-up.
 
 The comparison is only worth running if it is fair: equal gradient-step budget,
 at least three seeds each, duplicate deals, CIs on every difference, and
-parameter count and throughput reported alongside — otherwise the winner is
-whichever architecture got tuned most. `gate-p4` requires the table; it does not
-require a particular winner.
+parameter count, throughput and inference latency reported alongside —
+otherwise the winner is whichever architecture got tuned most. A slower torso
+must win per wall-clock, not just per gradient step. `gate-p4` requires the
+table; it does not require a particular winner.
 
 The heads:
 - **policy** over the reduced action set (draw upcard, draw stock, pass, knock,
@@ -305,6 +312,14 @@ why batch beats online here, the measured anchors, and what each metric means.
 It is not restated in this document; the point here is only *why* a rating in
 this game needs a lie detector attached at all.
 
+**Candidate discipline.** Before a long run, pre-register the primary
+comparison (paired match win rate against a frozen held-out population at
+equal inference latency), keep a final seed/opponent suite untouched by model
+selection, size effects with a pilot, and correct for repeated peeking across
+candidates. Final claims reproduce over three independent seeds. Matches are
+resampled as whole bundles — hands from one match are not independent
+observations, and neither are legs from one training seed (`gin-rl.md` §17).
+
 This is also the bridge to §6: the intransitivity that would quietly break Elo
 is precisely what makes the knock-early-versus-gin question interesting.
 
@@ -407,7 +422,9 @@ population was built — not a particular population.
 
 Reward shaping changes the game, so shaped agents are *population members*, never
 the main training objective. Their behaviour is the point; their training reward
-is the instrument.
+is the instrument. A match-equity critic or baseline is not shaping: it changes
+variance, not the objective, and the unbiased Monte Carlo match outcome stays
+the target it bootstraps toward.
 
 Alongside the ranking, each agent gets a behavioural profile: gin rate, knock
 rate, undercut rate, mean turns to knock, mean deadwood at knock, deadwood
@@ -482,18 +499,28 @@ located crossover is a better result than eleven evenly-spaced ones without.
 
 ## 8. Hardware notes
 
-Apple M4, unified memory, PyTorch MPS backend. Three consequences:
+Apple M4, unified memory, PyTorch MPS backend. Consequences:
 
 - MPS does not support float64. All torch paths are float32 or bfloat16, with a
-  cast at the NumPy boundary.
+  cast at the NumPy boundary. Mixed precision where stable: BF16 autocast for
+  the torso, FP32 for logits, probability normalisation, regret-style
+  accumulations and long-running averages.
 - MPS is not automatically faster. For models of this size, per-kernel dispatch
   overhead can make CPU quicker at small batches. The device is chosen by a
   microbenchmark of the real torso at the real batch size, recorded in
-  `docs/ENV_FACTS.md`, not by assumption.
+  `docs/ENV_FACTS.md`, not by assumption — and re-made at every size, since
+  the ordering inverts.
 - Environment stepping is not the bottleneck. Measured at roughly 36 000
   steps/s/core with observation and mask extraction, against ~34 decisions per
   hand, a single core can generate far more experience than the learner can
   consume. Optimisation effort belongs in inference batching.
+- Size the model to the machine, not the machine to the model: a 256-wide,
+  8-layer backbone with a 192-wide fallback, decided by a controlled benchmark
+  (keep 256 iff steps/s and batched inference fall by no more than ~25% and
+  strength per wall-clock day improves). Target at most ~48 GB sustained
+  allocation on a 64 GB machine; spend unified memory on the replay window
+  and belief/search caches rather than parameter count. One learner process
+  touches the accelerator; actors stay on CPU subprocesses.
 
 ## References
 

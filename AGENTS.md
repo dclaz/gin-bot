@@ -48,7 +48,9 @@ and tells you nothing. That has happened here before.
 - A fix requires changing a number in `configs/gates.yaml`.
 - You are about to start a training run longer than 30 minutes — and before you
   ask, re-benchmark CPU against MPS at that run's real model and batch size, and
-  bring both numbers. Picking the wrong device costs the whole run.
+  bring both numbers, plus a ≥1M-decision throughput measurement at the run's
+  real config to ground the duration estimate. Picking the wrong device costs
+  the whole run; estimating from utilisation costs the schedule.
 - `make facts-check` reports drift you did not cause.
 
 ## Environment (do not rediscover this)
@@ -63,6 +65,12 @@ and tells you nothing. That has happened here before.
   `RECOMMENDED_LEARNER_DEVICE` from the generated `src/ginrl/spiel_facts.py`.
   (`docs/ENV_FACTS.md` is the human-readable twin; code reads the Python file.)
   Do not hardcode `"mps"` or `"cuda"` anywhere.
+- **Machine migration checklist** (moving to new hardware re-runs Phase 0's
+  logic, not its numbers): `make probe` first (regenerates facts *and* the
+  device recommendation — never copy them across machines), then
+  `make facts-check`, then `make gate-p0` as smoke. Sustained allocation
+  stays under ~48 GB on a 64 GB machine; the replay window, not the parameter
+  count, is what unified memory buys.
 
 
 ## Commands
@@ -201,6 +209,19 @@ Verified by running OpenSpiel 2.0.2. Re-verify on the M4 via `make probe`;
    simulates a different discard rule than the one the agent will actually use
    takes cards the discard step immediately spits back (the pair loops into
    landmine 13). Simulate the real discard choice in the take test.
+15. **Hands from one match are not independent observations.** Bootstrap
+   resampling for match play must resample whole matches (or paired-match
+   bundles), then seeds — never individual hands, and never legs across
+   training seeds. Our hand-level arena correctly bootstraps deals; the match
+   evaluator must bootstrap one level up. Feeding match hands to the
+   Bradley-Terry fit as independent rows is the same error (OBSERVABILITY
+   says so too).
+16. **Determinized vote is not search.** Calling `resample_from_infostate`,
+   solving each sample as perfect information and voting is strategy fusion:
+   each particle gets its own best action and the vote is consistent with no
+   information set. `ISMCTSAgent` is a determinized-search *baseline* for the
+   ladder, not the solver design — the Phase 6 solver keeps one average
+   strategy over the particle range keyed by legal information sets.
 13. **`discard_pile` excludes the takeable card.** The struct's `discard_pile`
    is the buried pile only; the takeable card lives in the `upcard` field
    (`None` at Discard time, when `pile[-1]` is the just-discarded card).

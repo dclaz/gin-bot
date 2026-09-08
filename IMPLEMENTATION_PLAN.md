@@ -28,6 +28,17 @@ silent loosening is visible in the run log.
 instead of hour 6 is the single highest-return piece of engineering in this
 project. See §Tripwires.
 
+**Above all three — no layering past a failed ablation.** Each phase adds at
+most one expensive component (a torso, a belief decoder, a solver), and the
+phase gate must show it beating its ablation before the next component lands.
+A component that does not earn its place is removed, not carried.
+
+**Design input.** `gin-rl.md` (workstation-scale blueprint for this exact
+stack) is merged into Phases 3–6 below and remains at the repo root as
+reference. Where it and this plan disagree on timing, this plan wins and the
+commit message says why; where it details a mechanism this plan sketches, the
+detail was adopted.
+
 **Underneath all three — Telemetry.** Not a fourth layer: it is what the three
 above read. Continuous scalars, histograms and ratings streamed to
 `runs/<run>/metrics.jsonl` (source of truth) and Trackio (dashboard). Tripwires log both their current value and their threshold, so
@@ -325,7 +336,14 @@ one of those games, so it is not used here.
    and expensive as three unvalidated implementations blocking the same gate.
    Shared: clipped surrogate or NeuRD-style logit update, GAE, action masking
    applied to logits before the softmax, annealed learning rate and
-   regularisation coefficient (linear and power-law schedules).
+   regularisation coefficient (linear and power-law schedules). Report the
+   `magnet=snapshot` runs beside a β_KL=0 plain-PPO control: the control is
+   what the ablation guard contrasts against, and an unread control is an
+   unrun control. GAE is the baseline advantage estimator, not the answer:
+   run a GAE(λ=0.95)-versus-Monte-Carlo-returns comparison on Leduc
+   exploitability while it is cheap and exactly measurable — recent work
+   questions GAE in imperfect-information self-play (see `gin-rl.md` §10),
+   and whichever wins here is the estimator gin uses.
 2. `ginrl/nets/` — a shared torso feeding three heads: policy over the reduced
    action set, value, and an auxiliary **opponent-hand head** (52-way multilabel
    BCE). *The three heads are fixed* — the belief head backs a tripwire and the
@@ -348,7 +366,19 @@ one of those games, so it is not used here.
 6. Wire the Recorder into the trainer: `loss/`, `reg/`, `policy/`, `value/`,
    `opt/` and `perf/` namespaces, plus exploitability as a scalar on the small
    games. Seeing exploitability descend on Leduc in a live chart is the fastest
-   way to know the trainer works.
+   way to know the trainer works. Log per-head raw and weighted losses plus the
+   shared-encoder gradient norm (`docs/OBSERVABILITY.md`); an auxiliary head
+   dominating the encoder is visible there first.
+7. Trajectory record (`gin-rl.md` §15): store event-token deltas, match/hand
+   indices and scores, own-hand bitset, legal IDs, sampled action with its
+   behavior probability μ, policy/checkpoint/opponent IDs, hand outcome type
+   and terminal match outcome, rule and chance-seed IDs — and the true hidden
+   hand in a **separately marked label namespace unreachable from actor
+   inputs**. Enforce the separation with separate dataclasses or storage
+   namespaces, never by convention: a future refactor must not be able to
+   promote a label into an observation. Track the importance-correction
+   distribution when consuming stale trajectories; everything clipped is a
+   sign of excessive policy lag (tripwire).
 
 **Gate `gate-p3` — the ladder.** All thresholds in `configs/gates.yaml`.
 - **Kuhn poker.** Exploitability drops below 0.01 within the configured budget.
@@ -360,6 +390,9 @@ one of those games, so it is not used here.
   average, is what is measured. This is the property regularisation is bought for.
 - **Ablation guard.** The same trainer with regularisation disabled must do
   *worse* on Leduc. If it does not, the regularisation is not wired in.
+- **Estimator guard.** GAE(λ=0.95) versus Monte-Carlo returns on Leduc
+  exploitability, same budget. Whichever wins is the estimator the gin phases
+  use; a GAE loss here retires GAE, not the trainer.
 - **Determinism.** Two runs with the same seed produce bit-identical
   checkpoints on CPU.
 - **RL-BR calibration.** RL-BR against a fixed uniform-random Kuhn policy
@@ -386,13 +419,40 @@ and bugs are visible.
 2. Train with the Phase 3 trainer and the Phase 1 features.
 3. **Architecture bake-off.** This phase exists because runs are minutes, which
    makes it the only affordable place to compare architectures rather than
-   assume one. Train at least the four torsos in METHODOLOGY §3 — (A) residual
-   MLP over flat features, (B) set encoder over card embeddings, (C) sequence
-   encoder over the action history, (D) MLP on the raw 644-dim observation as
-   the no-features control — under an equal gradient-step budget, three seeds
-   each. The three heads are fixed across all four; only the torso varies.
+   assume one. Train at least the five torsos — (A) residual MLP over flat
+   features, (B) set encoder over card embeddings, (C) sequence encoder over
+   the action history, (D) MLP on the raw 644-dim observation as
+   the no-features control, (E) hybrid recurrent event attention over a set
+   hand encoder (`gin-rl.md` §5: GRU prefix plus exact recent-event attention)
+   — under an equal gradient-step budget, three seeds each. The three heads
+   are fixed across all five; only the torso varies. Report inference latency
+   per decision beside steps/s: a slower torso must win per wall-clock, not
+   just per gradient step, to carry forward.
 4. Note: the action space stays 241 and the observation stays 644 even at this
    size — masking handles it; do not "optimise" the layout.
+5. **Match wrapper, built here, not in Phase 5.** `MatchEnv`: hands to a
+   target score with the running score, hand number, role map and opponent
+   summary in the state; a `max_hands` safety cap that awards the leader (or
+   draws level) and whose every hit is reported. Paired-match evaluator with
+   deterministic per-hand chance streams and swapped seats/roles. Reduced
+   decks make the wrapper exactly checkable, so check it exactly: verify
+   match transitions, near-100 edge cases and cap accounting against
+   independently calculated fixtures, and verify a tiny repeated match
+   against exact CFR/best-response values. A wrapper bug found on 52-card
+   runs wastes the project's most expensive compute; found here it costs
+   minutes. (Timing deliberate: `gin-rl.md` wants the wrapper from the first
+   baseline, but hand-level machinery has to exist before match semantics
+   can be validated — Phase 4 is the earliest point where the check is
+   both possible and exact.)
+6. **Joint belief path.** Upgrade the 52-way marginal head toward a joint
+   posterior over opponent hands with hard constraints (phase-correct size,
+   no duplicates, own/public exclusions, pickup inclusions) trained on
+   simulator-only labels from the Phase 3 label namespace. Keep `belief/auc`
+   on tracker-undetermined cards as the tripwire, and add the decision-value
+   number: paired score with learned beliefs versus uniform beliefs, which
+   is the ablation that says whether dependencies buy decisions. Extend the
+   information-hygiene test to policy level: identical policy logits under
+   hidden-state substitutions that preserve the information state.
 
 **Gate `gate-p4`.**
 - Beats `RandomAgent` and `HeuristicAgent` on the reduced game with CIs excluding
@@ -407,11 +467,21 @@ and bugs are visible.
 - Training is stable across three seeds: final-score spread within the configured
   band, no entropy collapse.
 - **Architecture comparison reported, winner not prescribed.** A table over the
-  four torsos: mean paired score with CI, `belief/auc` on undetermined cards,
-  parameter count, and steps/s. Equal budget, three seeds, duplicate deals. The
-  gate requires the table and the equal-budget discipline, *not* a particular
-  winner — whichever torso wins carries forward, with its margin recorded in the
-  commit that closes the phase.
+  five torsos: mean paired score with CI, `belief/auc` on undetermined cards,
+  parameter count, steps/s, and inference ms/decision. Equal budget, three
+  seeds, duplicate deals. The gate requires the table and the equal-budget
+  discipline, *not* a particular winner — whichever torso wins carries forward,
+  with its margin recorded in the commit that closes the phase.
+- **Match wrapper verified exactly.** Tiny repeated-match value matches the
+  exact solver within tolerance; near-100 and cap fixtures pass; zero
+  unreported cap hits in evaluation.
+- **Policy-level information hygiene.** Identical policy logits under
+  hidden-state substitutions that preserve the information state, over the
+  configured fixture count. The feature-level test guards the tracker; this
+  guards the whole inference graph including recurrent state.
+- **Belief decision value reported.** Paired score with learned beliefs versus
+  uniform beliefs, CI excluding indifference — the number that says whether
+  the joint decoder buys decisions, not just likelihood.
 - **The no-features control is informative either way.** If (D) is competitive
   with (A), METHODOLOGY §4's central premise — that hand-engineered structure
   beats learned embeddings here — does not hold in our rule set, and that is a
@@ -453,9 +523,21 @@ score-dependent knock threshold, which is the interesting half of the question.
    assertion. Freeze the champion, train a fresh PPO agent against it as a
    single-agent MDP, report the value achieved. This is a lower bound on
    exploitability and the only tractable worst-case measure here. Also run the
-   ISMCTS-BR variant for a second opinion.
-5. Maintain a fixed **evaluation ladder** — random, simple bot, heuristic family,
-   ISMCTS at fixed budget, previous champions — that never enters training.
+   ISMCTS-BR variant for a second opinion. Report best-response learning
+   curves, not just the final value: a flat curve against a strong champion
+   and a steep one mean different things.
+5. Train with a matchmaker, not a fixed rotation: ~35% current or averaged
+   policy, ~30% historical snapshots weighted by learning progress, ~20%
+   exploiters and specialists, ~15% meta-strategy or uniform coverage
+   (starting values to tune, `gin-rl.md` §11). Sample the opponent once per
+   match — changing policies between hands makes cross-hand adaptation and
+   the match value target incoherent. Keep training on a reduced-game stratum
+   throughout, so exact exploitability stays a live regression test rather
+   than a Phase 4 memory. Maintain a fixed **evaluation ladder** — random,
+   simple bot, heuristic family (aggressive-knock, conservative-gin,
+   pickup-baiting, defensive-discard specialists named explicitly),
+   ISMCTS at fixed budget, previous champions, averaged strategy — that
+   never enters training.
    Every `elo_every` steps, play duplicate deals against each ladder member and
    a sample of past checkpoints, append to `runs/game_record.jsonl`, refit the
    Bradley-Terry model over the whole record anchored on `SimpleGinRummyBot = 0`,
@@ -463,7 +545,19 @@ score-dependent knock threshold, which is the interesting half of the question.
    and `ratings/cyclic_fraction`. Run this off the learner's critical path.
 6. Log the `style/` namespace throughout, so the emerging playing style — gin
    rate, turns to knock, deadwood at knock — is visible as it forms rather than
-   measured once at the end.
+   measured once at the end. Run two ablations the reduced phase cannot:
+   match memory reset-every-hand versus persistent opponent summary (the
+   cross-hand adaptation test), and scalar-mean versus distributional
+   hand-score value (tail and knock-decision quality). Oversample rare
+   near-100 score states deliberately; natural play almost never visits them
+   and the match-equity head must still be calibrated there.
+7. Candidate discipline, pre-registered before the run: a frozen held-out
+   opponent suite no model selection touches; promotion needs a positive
+   lower paired-bootstrap bound versus the incumbent, no material regression
+   beyond tolerance against any specialist, role or score bucket, and no
+   reduced-game NashConv regression; final claims reproduce over three
+   independent seeds; correct for repeated peeking across candidates. (See
+   METHODOLOGY §5; `gin-rl.md` §17.)
 
 **Gate `gate-p5`.**
 - Beats `SimpleGinRummyBot` by a margin exceeding the configured threshold over
@@ -474,8 +568,9 @@ score-dependent knock threshold, which is the interesting half of the question.
 - **The knock threshold moves with the score.** Mean deadwood at knock, bucketed
   by score differential, is not flat — a policy that knocks identically at +90
   and −90 has not learned the score-dependent policy and is a hand-level agent
-  wearing a match-level wrapper. Report the curve; the gate wants a CI-separated
-  difference between the extreme buckets.
+  wearing a match-level wrapper. Probe identical hand histories at score states
+  0-0, 99-0, 90-99 and 20-90 and report conditional match equity alongside the
+  curve; the gate wants a CI-separated difference between the extreme buckets.
 - Beats the tuned `HeuristicAgent` and the previous champion.
 - RL-BR bound on the champion is lower than the RL-BR bound on every baseline —
   i.e. the agent is not merely strong head-to-head but harder to exploit. Report
@@ -539,6 +634,19 @@ evaluation methodology rather than an anecdote.
    stability. (If α-Rank was run at all, bootstrap it too and report both.)
 8. Cross-tabulate rank against the behavioural profile from Phase 2: gin rate,
    mean deadwood at knock, mean turns to knock.
+9. **Local search, as an experiment, not a commitment** (`gin-rl.md` §12).
+   Range-consistent sampled CFR over learned-posterior particles — never
+   determinized vote, never the true hand choosing the action. Starting
+   budgets: 64 particles / 256–512 traversals (fast), 128 / 1–2k (standard),
+   512+ / 10k+ (offline labels); profile first, benchmark latency, and compare
+   at fixed wall-clock cost, searching only a confidence-triggered subset of
+   decisions. Solver contract: regrets keyed by public history, acting player,
+   private-hand embedding and match score; one root average strategy over the
+   particle range; hand endings evaluated through the boundary match critic.
+   Distill with KL while keeping self-play losses active, and gate
+   distillation by search confidence. A sampled-CFR teacher for hard states
+   may join the league only if the search-validity ablation below passes —
+   same layering rule as everything else.
 
 **Gate `gate-p6`.**
 - Payoff matrix complete, every cell with a CI and a recorded deal count.
@@ -561,6 +669,11 @@ evaluation methodology rather than an anecdote.
   explained with strategies 120° apart; a transitive ladder gives 0.0% and a
   cyclic strength of 0.000. A mElo that finds cycles in transitive data is
   overfitting and fails the gate.
+- **Search validity, if search was built.** Learned-belief search versus the
+  determinized baseline on reduced games with exact exploitability: the
+  range-consistent solver must show lower exploitability, or the difference is
+  strategy fusion and the solver does not promote. Report strength at fixed
+  p50/p95 latency alongside traversal budgets.
 - `docs/RESULTS.md` regenerates end-to-end from artifacts with one command.
 
 **Prior worth testing, not assuming.** Recent published work on gin rummy (in
@@ -611,6 +724,7 @@ Checked every `eval_every` steps during training. Each fires once, dumps, halts.
 | Entropy stuck | entropy within 1% of maximum after N updates | gradients not reaching the policy head |
 | Value blow-up | value loss > k× its running median | reward not scaled; ±123 range fed raw |
 | KL spike | update KL > 10× target | learning rate schedule wrong |
+| Policy lag | importance-ratio mass clipped nearly everywhere | stale actors; shorten rollout or speed up learner |
 | Mask violation | any sampled action illegal | masking applied after softmax instead of to logits |
 | Degenerate action | one action > 95% of decisions over a window | collapsed policy; check the reduced action set |
 | Ladder regression | score vs fixed ladder falls for 3 consecutive evals | overfitting to self; keep the best checkpoint |
@@ -639,4 +753,9 @@ Checked every `eval_every` steps during training. Each fires once, dumps, halts.
 **Compute sanity.** At ~34 decisions/hand and ~36k env steps/s/core, the
 environment can produce far more experience than an M4 can learn from. Budget by
 gradient steps and wall-clock, not by episodes, and expect the learner — not the
-engine — to be the constraint.
+engine — to be the constraint. Run-sizing guidance (`gin-rl.md` §14, M4 Max
+64 GB mapping): debug control 1–5M player decisions; architecture comparison
+20–50M decisions per run; population run 100–300M decisions across actors;
+final campaign several independent 200M+ runs, only if curves still improve.
+Benchmark one million decisions at the run's real config before estimating days
+or weeks — never substitute GPU utilisation for playing-strength progress.

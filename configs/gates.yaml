@@ -51,7 +51,7 @@ gate-p2:
   ismcts_smoke_simulations: 30
   ismcts_ladder_budgets: [100, 1000]
   fit_ratings_l2_prior_sigma: 2.0
-  rating_recovery_tolerance_elo: 25  # TODO: uncalibrated, revisit in Phase 2.
+  rating_recovery_tolerance_elo: 25  # calibrated in Phase 2 (recovery well within; coverage 1.0).
   rating_ci_coverage_min: 0.90
   cyclic_fraction_rps: 0.9994
   cyclic_fraction_rps_tolerance: 0.01
