@@ -188,6 +188,19 @@ Verified by running OpenSpiel 2.0.2. Re-verify on the M4 via `make probe`;
    "raw stepping is not the bottleneck, inference batching probably is" — the
    feature path is unmeasured until Phase 1 measures it. Profile before
    optimising either.
+13. **The engine calls no-progress pile-cycling a draw.** A hand where both
+   players keep taking the upcard without drawing stock ends 0-0 with the
+   stock untouched (observed: dead after both players consecutively take and
+   re-discard the same upcard). It is not a wall (stock exhaustion) but our
+   accounting files it under no-knock endings all the same. Any agent that
+   over-takes from the pile will "wall" every game without ever touching the
+   stock — check the action log, not the stock, when walls spike.
+14. **A failed take test must route to stock, not to `legal[0]`.** At a Draw
+   phase the legal actions sort 52 (pile) before 53 (stock), so a fallthrough
+   `return legal[0]` takes the upcard unconditionally. Worse, a draw test that
+   simulates a different discard rule than the one the agent will actually use
+   takes cards the discard step immediately spits back (the pair loops into
+   landmine 13). Simulate the real discard choice in the take test.
 13. **`discard_pile` excludes the takeable card.** The struct's `discard_pile`
    is the buried pile only; the takeable card lives in the `upcard` field
    (`None` at Discard time, when `pile[-1]` is the just-discarded card).

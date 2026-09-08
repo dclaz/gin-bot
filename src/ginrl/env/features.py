@@ -79,6 +79,14 @@ class BeliefTracker:
     def observe_turn(self) -> None:
         self._turn += 1
 
+    def known_cards(self) -> set[int]:
+        """Cards the opponent took from the pile and still holds (copy)."""
+        return set(self._taken)
+
+    def declined_cards(self) -> set[int]:
+        """Upcards the opponent declined (copy)."""
+        return set(self._declined)
+
     def set_match_state(self, my_score: float, opp_score: float, target: float) -> None:
         self._my_score = my_score
         self._opp_score = opp_score

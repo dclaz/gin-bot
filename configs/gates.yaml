@@ -34,6 +34,23 @@ gate-p2:
   # Regression baselines from Phase 0's probe (informational, not pass/fail).
   ref_decisions_per_game: 34
   ref_points_per_hand_magnitude: 16.4
+  # Live-harness sample counts.
+  random_vs_simple_deals: 400
+  heuristic_vs_random_deals: 200
+  duplicate_variance_deals: 200
+  duplicate_variance_ratio_max: 0.5
+  random_null_deals: 1500
+  parity_seeds: 100
+  profiler_hands_fast: 60
+  profiler_hands_ismcts: 6
+  # Pass/fail bands (first authoring, Phase 2).
+  total_actions_band: [31, 37]
+  points_per_hand_magnitude_band: [14.0, 21.0]
+  wall_fraction_max: 0.01
+  # Config pins (not pass/fail): ISMCTS ladder budgets and the BT prior.
+  ismcts_smoke_simulations: 30
+  ismcts_ladder_budgets: [100, 1000]
+  fit_ratings_l2_prior_sigma: 2.0
   rating_recovery_tolerance_elo: 25  # TODO: uncalibrated, revisit in Phase 2.
   rating_ci_coverage_min: 0.90
   cyclic_fraction_rps: 0.9994

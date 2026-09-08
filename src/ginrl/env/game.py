@@ -13,6 +13,7 @@ with the agents' seats swapped (done by the driver, not here).
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import pyspiel
@@ -25,6 +26,12 @@ from ginrl.env.features import BeliefTracker
 from ginrl.env.melds import NUM_CARDS, card_to_index
 
 N_LEARNED_ACTIONS = gr.KNOCK_ACTION + 1  # engine actions 0..55, identity-mapped
+
+# Notified before every engine transition (chance, learned and auto actions)
+# with the pre-action state: listener(acting_seat, state, player, action).
+# Chance transitions report acting_seat=-1. The arena uses this to route the
+# inform_action stream to stateful engine bots (landmine 3).
+TransitionListener = Callable[[int, pyspiel.State, int, int], None]
 
 # Phases where the learned policy acts. Everything else (Knock declaration,
 # Layoff, Wall) is auto-resolved by meld_policy.
@@ -58,6 +65,10 @@ class HandEnv:
             BeliefTracker(0, self.config.knock_card),
             BeliefTracker(1, self.config.knock_card),
         ]
+        self.listener: TransitionListener | None = None
+        # Seats whose Knock/Layoff phases are driven externally (engine bots
+        # playing natively) instead of the meld auto-policy. Wall stays auto.
+        self.manual_phases: set[int] = set()
 
     # -- episode control -------------------------------------------------
 
@@ -87,7 +98,8 @@ class HandEnv:
         """BeliefTracker feature vector for a seat at the current state."""
         state = self._require_state()
         obs = state.to_observation_struct(seat).to_dict()
-        mask = self.legal_mask() if seat == state.current_player() else None
+        learned = str(state.to_dict()["phase"]) in LEARNED_PHASES
+        mask = self.legal_mask() if learned and seat == state.current_player() else None
         return self._trackers[seat].features(obs, mask).tolist()
 
     @property
@@ -104,6 +116,10 @@ class HandEnv:
         mask = self.legal_mask()
         assert 0 <= action < N_LEARNED_ACTIONS and mask[action], f"illegal learned action {action}"
         self._apply(state, action, learned=True)
+        return self._finish_step()
+
+    def _finish_step(self) -> StepResult:
+        state = self._require_state()
         self._advance()
         if state.is_terminal():
             returns = tuple(float(r) for r in state.returns())
@@ -149,11 +165,21 @@ class HandEnv:
             phase = state.to_dict()["phase"]
             if phase in LEARNED_PHASES:
                 return
+            if phase in ("Knock", "Layoff") and state.current_player() in self.manual_phases:
+                return
             before = len(state.history())
             auto = meld_policy.next_auto_action(state)
             assert auto is not None, f"no auto action at non-learned phase {phase}"
             self._apply(state, auto, learned=False)
             assert len(state.history()) > before, f"auto phase made no progress at {phase}"
+
+    def raw_step(self, action: int) -> StepResult:
+        """Apply any legal engine action (bots use this for meld phases)."""
+        state = self._require_state()
+        assert not state.is_terminal(), "step called on a finished hand"
+        assert action in state.legal_actions(), f"illegal engine action {action}"
+        self._apply(state, action, learned=False)
+        return self._finish_step()
 
     def _apply(self, state: pyspiel.State, action: int, learned: bool) -> None:
         """Apply one engine action, publishing the public event to both trackers."""
@@ -161,6 +187,8 @@ class HandEnv:
         seat = state.current_player()
         upcard = info["upcard"]
         upcard_idx = card_to_index(upcard) if isinstance(upcard, str) else -1
+        if self.listener is not None:
+            self.listener(seat, state, seat, action)
         state.apply_action(action)
         self._in_deal = False
         for tracker in self._trackers:
@@ -231,15 +259,24 @@ class HandEnv:
                 self._stock_next += 1
                 assert action in actions, f"predetermined stock card {action} not offered"
             self._chance_record.append(action)
+            if self.listener is not None:
+                self.listener(-1, state, state.current_player(), action)
             state.apply_action(action)
 
     def _observe(self, reward: float, returns: tuple[float, float] | None) -> StepResult:
         state = self._require_state()
         seat = state.current_player()
         assert seat in (0, 1)
+        # Manual-phase stops (bots driving melds natively) have no learned
+        # mask; the driver uses choose_raw and the raw legal list there.
+        mask = (
+            self.legal_mask()
+            if str(state.to_dict()["phase"]) in LEARNED_PHASES
+            else [False] * N_LEARNED_ACTIONS
+        )
         return StepResult(
             obs=state.to_observation_struct(seat).to_dict(),
-            mask=self.legal_mask(),
+            mask=mask,
             reward=reward,
             done=False,
             seat=seat,

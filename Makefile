@@ -32,8 +32,8 @@ gate-p0: lint test
 gate-p1: lint test
 	$(UV) python scripts/gate_p1.py
 
-gate-p2:
-	@echo "not implemented (Phase 2 — opponents and evaluation harness)"; exit 1
+gate-p2: lint test
+	$(UV) python scripts/gate_p2.py
 
 gate-p3:
 	@echo "not implemented (Phase 3 — trainer core)"; exit 1
@@ -59,4 +59,4 @@ board:
 	$(UV) trackio show --project ginrl
 
 elo:
-	@echo "not implemented (Phase 2 — ratings refit from runs/game_record.jsonl)"; exit 1
+	$(UV) python scripts/elo.py
