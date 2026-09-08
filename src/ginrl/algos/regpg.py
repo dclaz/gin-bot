@@ -234,6 +234,8 @@ def ppo_update(
     reg = cfg.reg_coef * factor
     stats: dict[str, float] = {}
     n = batch.obs.shape[0]
+    clip_fracs: list[float] = []
+    grad_norms: list[float] = []
     for _ in range(cfg.epochs):
         perm = torch.randperm(n, generator=gen)
         for start in range(0, n, cfg.minibatch_size):
@@ -255,13 +257,35 @@ def ppo_update(
             loss = -pg + cfg.vf_coef * vf + cfg.aux_coef * aux_loss + reg * kl
             optimizer.zero_grad()
             loss.backward()
+            # Norm measurement only: max_norm=1e9 disables actual clipping.
+            # Phase 3 does not clip gradients; grad_norm is a health signal.
+            grad_norms.append(
+                float(torch.nn.utils.clip_grad_norm_([p for p in net.parameters()], 1e9))
+            )
             optimizer.step()
+            clip_fracs.append(
+                float(((ratio < 1.0 - cfg.clip_eps) | (ratio > 1.0 + cfg.clip_eps)).float().mean())
+            )
             stats = {
-                "pg": -float(pg),
-                "vf": float(vf),
-                "aux": float(aux_loss),
-                "kl": float(kl),
-                "loss": float(loss),
+                "pg": -float(pg.detach()),
+                "vf": float(vf.detach()),
+                "aux": float(aux_loss.detach()),
+                "kl": float(kl.detach()),
+                "loss": float(loss.detach()),
             }
     magnet.post_update(net)
+    # Diagnostics on the updated net (one extra forward; small games only).
+    net.eval()
+    with torch.no_grad():
+        final_logits, _, _ = net(batch.obs, batch.mask)
+        stats["entropy"] = float(MaskedActorCritic.entropy(final_logits).mean())
+    net.train()
+    ret_var = float(batch.ret.var())
+    stats["explained_variance"] = (
+        1.0 - float((batch.ret - batch.value_old).var()) / ret_var if ret_var > 0 else float("nan")
+    )
+    stats["clip_frac"] = sum(clip_fracs) / len(clip_fracs)
+    stats["grad_norm"] = sum(grad_norms) / len(grad_norms)
+    stats["lr"] = lr
+    stats["reg_alpha"] = reg
     return stats
