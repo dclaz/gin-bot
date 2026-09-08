@@ -64,10 +64,12 @@ class TrackioDashboard:
         self._trackio.log({metric: self._trackio.Histogram(list(values))}, step=step)
 
     def table(self, step: int, metric: str, columns: list[str], rows: list[list[object]]) -> None:
-        table = self._trackio.Table(columns=columns)
-        for row in rows:
-            table.add_data(*row)
+        # No add_data on this API: rows go through the constructor.
+        table = self._trackio.Table(columns=columns, data=[[str(v) for v in row] for row in rows])
         self._trackio.log({metric: table}, step=step)
+
+    def finish(self) -> None:
+        self._trackio.finish()
 
 
 @dataclass
@@ -192,6 +194,14 @@ class Recorder:
             self.flush()
             self._file.close()
             self._closed = True
+            if self._sink_ok and self._dashboard is not None:
+                try:
+                    self._dashboard.finish()
+                except Exception as exc:
+                    warnings.warn(
+                        f"dashboard finish failed; JSONL is complete: {exc}",
+                        stacklevel=2,
+                    )
 
     def __enter__(self) -> Recorder:
         return self

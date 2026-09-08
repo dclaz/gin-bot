@@ -11,6 +11,7 @@ from ginrl.agents.protocol import Agent
 from ginrl.config import HandConfig, Seeds
 from ginrl.env.game import HandEnv
 from ginrl.eval.stats import Summary, bootstrap_ci, require
+from ginrl.telemetry.recorder import Recorder
 
 
 @dataclass(frozen=True)
@@ -192,6 +193,15 @@ class PairSummary:
         per_deal = [(p.leg1.returns[0] + p.leg2.returns[1]) / 2 for p in self.pairs]
         return bootstrap_ci(per_deal)
 
+    def win_rate(self) -> Summary:
+        """Paired-deal win rate for A with a deal-level bootstrap CI.
+
+        One sign per deal (ties count half): the paired sum cancels the
+        deal's luck before the sign is taken.
+        """
+        signs = [1.0 if s > 0 else (0.0 if s < 0 else 0.5) for s in self.paired_scores()]
+        return bootstrap_ci(signs)
+
     def checked(self, min_deals: int) -> PairSummary:
         """Refuse to report below the resolved sample count."""
         require(self.n_deals, min_deals, f"{self.agent_a} vs {self.agent_b}")
@@ -211,6 +221,8 @@ def summarize(
 class Arena:
     config: HandConfig = field(default_factory=HandConfig)
     seeds: Seeds = field(default_factory=Seeds)
+    recorder: Recorder | None = None
+    legs_played: int = 0  # step counter for logged tables
 
     def play_game(self, agent_a: Agent, agent_b: Agent, seed: int) -> GameResult:
         return play_game(agent_a, agent_b, seed, HandEnv(self.config, self.seeds))
@@ -240,4 +252,23 @@ class Arena:
                 )
             )
             deal_seeds.append(deal_seed)
-        return summarize(agent_a, agent_b, pairs, deal_seeds)
+        summary = summarize(agent_a, agent_b, pairs, deal_seeds)
+        self.legs_played += 2 * n_deals
+        if self.recorder is not None:
+            ppb = summary.points_per_hand()
+            self.recorder.log_table(
+                self.legs_played,
+                "ratings/head_to_head",
+                ["agent_a", "agent_b", "deals", "mean", "lo", "hi"],
+                [
+                    [
+                        summary.agent_a,
+                        summary.agent_b,
+                        n_deals,
+                        round(ppb.mean, 3),
+                        round(ppb.lo, 3),
+                        round(ppb.hi, 3),
+                    ]
+                ],
+            )
+        return summary

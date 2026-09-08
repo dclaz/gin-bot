@@ -228,6 +228,30 @@ def main() -> int:
         f"JSONL record kinds {kinds} (sink-kill isolation is unit-tested)",
     )
 
+    # 8b. Arena wiring: every later phase logs through the Recorder because
+    # the arena carries one, not because callers remember to.
+    with tempfile.TemporaryDirectory() as tmp:
+        rec = Recorder(
+            RecorderConfig(
+                run_dir=Path(tmp) / "wired",
+                run_name="gate-p2-wired",
+                dashboard_enabled=False,
+            )
+        )
+        wired = Arena(recorder=rec)
+        wired.duplicate_summary(HeuristicAgent(), RandomAgent(), seed=8, n_deals=10)
+        rec.close()
+        wired_rows = [
+            json.loads(line)
+            for line in (Path(tmp) / "wired" / "metrics.jsonl").read_text().splitlines()
+        ]
+    tables = [r for r in wired_rows if r.get("metric") == "ratings/head_to_head"]
+    check(
+        "arena_wiring",
+        len(tables) == 1 and wired.legs_played == 20,
+        f"head_to_head rows {[t['rows'] for t in tables]}",
+    )
+
     print(f"gate-p2 finished in {time.time() - t0:.0f}s", flush=True)
     if FAILURES:
         print(f"FAILURES: {FAILURES}", flush=True)
