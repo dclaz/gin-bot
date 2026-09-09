@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ginrl.config import HandConfig, Seeds
-from ginrl.env.features import FEATURE_DIM
+from ginrl.env.features import feature_dim
 from ginrl.env.game import N_LEARNED_ACTIONS, HandEnv, StepResult
 
 
@@ -55,6 +55,18 @@ class VectorEnv:
     def features_for(self, env_id: int, seat: int) -> list[float]:
         return self._envs[env_id].features_for(seat)
 
+    def tensor_for(self, env_id: int, seat: int) -> tuple[float, ...]:
+        """Padded raw observation tensor (actor input)."""
+        return self._envs[env_id].tensor_for(seat)
+
+    def events_for(self, env_id: int, seat: int) -> tuple[int, ...]:
+        """Bounded public-event window for `seat`'s tracker (actor input)."""
+        return self._envs[env_id].trackers[seat].event_window()
+
+    def hidden_opp_hand(self, env_id: int, seat: int) -> tuple[int, ...]:
+        """TRUE opponent hand — LABEL NAMESPACE, never an actor input."""
+        return self._envs[env_id].hidden_opp_hand(seat)
+
     def _batch(self, results: list[StepResult | None]) -> BatchResult:
         feats: list[list[float]] = []
         masks: list[list[bool]] = []
@@ -70,7 +82,7 @@ class VectorEnv:
                 returns.append(result.returns if result is not None else None)
             else:
                 feats.append(self._envs[i].features_for(result.seat))
-                assert len(feats[-1]) == FEATURE_DIM
+                assert len(feats[-1]) == feature_dim(self.config.deck_size)
                 masks.append(result.mask)
                 seats.append(result.seat)
                 dones.append(False)

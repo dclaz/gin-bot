@@ -38,8 +38,8 @@ gate-p2: lint test
 gate-p3: lint test
 	$(UV) python scripts/gate_p3.py
 
-gate-p4:
-	@echo "not implemented (Phase 4 — reduced gin rummy)"; exit 1
+gate-p4: lint test
+	$(UV) python scripts/gate_p4.py
 
 gate-p5:
 	@echo "not implemented (Phase 5 — full game)"; exit 1

@@ -11,6 +11,7 @@ from pyspiel import gin_rummy as gr
 from ginrl.config import HandConfig, Seeds
 from ginrl.env import melds
 from ginrl.env.game import HandEnv
+from ginrl.env.melds import CardLayout
 
 
 def test_card_codec_round_trips_all_52() -> None:
@@ -20,6 +21,15 @@ def test_card_codec_round_trips_all_52() -> None:
     assert melds.card_to_index("Ks") == 12
     assert melds.card_to_index("Ac") == 13
     assert melds.index_to_card(51) == "Kh"
+
+
+def test_reduced_layout_codec_and_melds() -> None:
+    layout = CardLayout(num_ranks=5, num_suits=2)
+    assert layout.deck_size == 10
+    assert layout.card_to_index("Ac") == 5
+    assert layout.index_to_card(9) == "5c"
+    assert layout.parse_hand(["As", "2s", "3s"]) == [0, 1, 2]
+    assert melds.min_deadwood([0, 1, 2], layout, 3) == 0
 
 
 def test_min_deadwood_known_hands() -> None:

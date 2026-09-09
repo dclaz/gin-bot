@@ -10,6 +10,8 @@ import hashlib
 import random
 from dataclasses import dataclass, field
 
+from pyspiel import gin_rummy as gr
+
 
 @dataclass(frozen=True)
 class Seeds:
@@ -34,6 +36,18 @@ class HandConfig:
     num_suits: int = 4
     oklahoma: bool = False
 
+    def __post_init__(self) -> None:
+        minimum = 2 * self.hand_size + gr.WALL_STOCK_SIZE + 1
+        if self.num_ranks * self.num_suits < minimum:
+            raise ValueError(
+                "deck too small for two hands, wall stock, and one upcard: "
+                f"{self.num_ranks * self.num_suits} < {minimum}"
+            )
+
+    @property
+    def deck_size(self) -> int:
+        return self.num_ranks * self.num_suits
+
     def game_params(self) -> dict[str, object]:
         return {
             "gin_bonus": self.gin_bonus,
@@ -44,6 +58,11 @@ class HandConfig:
             "num_suits": self.num_suits,
             "oklahoma": self.oklahoma,
         }
+
+
+# Phase 4 reduced game: deck 10, hand 3. The padded engine action and
+# observation layouts stay 241 and 644; masking selects the legal subset.
+REDUCED_HAND_CONFIG = HandConfig(num_ranks=5, num_suits=2, hand_size=3)
 
 
 @dataclass(frozen=True)
@@ -66,6 +85,11 @@ MAGNET_MODES = (MAGNET_UNIFORM, MAGNET_EMA, MAGNET_SNAPSHOT)
 # Environments the trainer supports. Kuhn/Leduc calibrate the learner;
 # gin_reduced is the bridge to full gin (Phase 4+).
 TRAIN_ENVS = ("kuhn", "leduc", "gin_reduced")
+
+
+def _require(condition: bool, message: str) -> None:
+    if not condition:
+        raise ValueError(message)
 
 
 @dataclass(frozen=True)
@@ -91,6 +115,11 @@ class TrainerConfig:
     vf_coef: float = 0.5
     reg_coef: float = 0.0
     aux_coef: float = 0.1
+    # Linear reward rescaling for the gin path (critic preconditioning).
+    # Positive scaling preserves zero-sum, Nash set, and best responses;
+    # it is not shaping. Eval scores are always unscaled. Default 1.0 keeps
+    # every calibrated small-game recipe bit-identical.
+    reward_scale: float = 1.0
     advantage: str = "gae"  # "gae" | "mc" (estimator guard decides)
     anneal: str = "none"  # "none" | "linear" (lr and reg_coef -> 0)
     magnet_mode: str = MAGNET_UNIFORM
@@ -103,23 +132,37 @@ class TrainerConfig:
     device: str = "auto"
 
     def __post_init__(self) -> None:
-        if self.env not in TRAIN_ENVS:
-            raise ValueError(f"env must be one of {TRAIN_ENVS}, got {self.env!r}")
-        if self.magnet_mode not in MAGNET_MODES:
-            raise ValueError(f"magnet_mode must be one of {MAGNET_MODES}, got {self.magnet_mode!r}")
+        _require(self.env in TRAIN_ENVS, f"env must be one of {TRAIN_ENVS}, got {self.env!r}")
+        _require(
+            self.magnet_mode in MAGNET_MODES,
+            f"magnet_mode must be one of {MAGNET_MODES}, got {self.magnet_mode!r}",
+        )
         for name in ("total_steps", "n_envs", "rollout_len", "epochs", "minibatches"):
-            if getattr(self, name) <= 0:
-                raise ValueError(f"{name} must be positive, got {getattr(self, name)}")
-        if self.minibatches > self.n_envs * self.rollout_len:
-            raise ValueError("minibatches exceeds rollout batch size")
-        if not 0.0 <= self.magnet_ema_decay <= 1.0:
-            raise ValueError(f"magnet_ema_decay must be in [0, 1], got {self.magnet_ema_decay}")
-        if self.magnet_mode == MAGNET_SNAPSHOT and self.snapshot_every <= 0:
-            raise ValueError("snapshot magnet needs snapshot_every > 0")
-        if self.advantage not in ("gae", "mc"):
-            raise ValueError(f"advantage must be 'gae' or 'mc', got {self.advantage!r}")
-        if self.anneal not in ("none", "linear"):
-            raise ValueError(f"anneal must be 'none' or 'linear', got {self.anneal!r}")
+            _require(
+                getattr(self, name) > 0,
+                f"{name} must be positive, got {getattr(self, name)}",
+            )
+        _require(
+            self.minibatches <= self.n_envs * self.rollout_len,
+            "minibatches exceeds rollout batch size",
+        )
+        _require(
+            0.0 <= self.magnet_ema_decay <= 1.0,
+            f"magnet_ema_decay must be in [0, 1], got {self.magnet_ema_decay}",
+        )
+        _require(self.reward_scale > 0.0, f"reward_scale must be positive, got {self.reward_scale}")
+        _require(
+            self.magnet_mode != MAGNET_SNAPSHOT or self.snapshot_every > 0,
+            "snapshot magnet needs snapshot_every > 0",
+        )
+        _require(
+            self.advantage in ("gae", "mc"),
+            f"advantage must be 'gae' or 'mc', got {self.advantage!r}",
+        )
+        _require(
+            self.anneal in ("none", "linear"),
+            f"anneal must be 'none' or 'linear', got {self.anneal!r}",
+        )
 
     @property
     def batch_size(self) -> int:

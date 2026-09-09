@@ -2,8 +2,11 @@
 
 Loss per minibatch (means over rows):
 
-    L = -PG_clip + vf_coef * MSE(V, ret) + aux_coef * BCE(aux, opp_card)
+    L = -PG_clip + vf_coef * MSE(V, ret) + aux_coef * AUX(aux, opp)
         + reg_coef * KL(pi || magnet)
+
+AUX is single-label cross-entropy on small games (gate-p3 calibration) and
+multilabel BCE over the joint opponent hand on gin (Phase 4 belief path).
 
 `magnet=uniform` makes the KL term an entropy bonus (up to log L); that is
 the Rudolph et al. baseline, not a separate entropy knob. `snapshot`
@@ -44,7 +47,9 @@ class Batch:
     value_old: torch.Tensor  # [N] float32, behaviour values
     adv: torch.Tensor  # [N] float32, standardised advantages
     ret: torch.Tensor  # [N] float32, returns (value targets)
-    opp: torch.Tensor  # [N] long, opponent-card aux labels
+    # Aux belief target: [N] long single-label (legacy small-game path) or
+    # [N, D] float32 multi-hot joint hand (gin path; see RolloutStep).
+    opp: torch.Tensor
 
 
 def linear_factor(steps_done: int, total_steps: int) -> float:
@@ -112,6 +117,19 @@ def advantages(
     return adv, ret
 
 
+def _stack_opp_labels(steps: list[RolloutStep], device: torch.device) -> torch.Tensor:
+    """Stack aux belief targets: legacy single-label or joint multi-hot."""
+    if any(s.opp_hand is not None for s in steps):
+        missing = [i for i, s in enumerate(steps) if s.opp_hand is None]
+        if missing:
+            raise ValueError(f"gin batch mixes labelled and unlabelled rows: {missing[:5]}")
+        width = {len(s.opp_hand or ()) for s in steps}
+        if len(width) != 1:
+            raise ValueError(f"gin batch mixes opp-hand widths: {sorted(width)}")
+        return torch.tensor([s.opp_hand or () for s in steps], dtype=torch.float32, device=device)
+    return torch.tensor([s.opp_card for s in steps], dtype=torch.long, device=device)
+
+
 def make_batch(
     steps: list[RolloutStep],
     logps: list[float],
@@ -132,7 +150,7 @@ def make_batch(
         value_old=torch.tensor(values, dtype=torch.float32, device=device),
         adv=adv_t.to(device),
         ret=torch.tensor(rets, dtype=torch.float32, device=device),
-        opp=torch.tensor([s.opp_card for s in steps], dtype=torch.long, device=device),
+        opp=_stack_opp_labels(steps, device),
     )
 
 
@@ -296,7 +314,10 @@ def ppo_update(
                 ratio.clamp(1.0 - cfg.clip_eps, 1.0 + cfg.clip_eps) * batch.adv[idx],
             ).mean()
             vf = functional.mse_loss(value, batch.ret[idx])
-            aux_loss = functional.cross_entropy(aux, batch.opp[idx])
+            if batch.opp.dtype == torch.long:
+                aux_loss = functional.cross_entropy(aux, batch.opp[idx])
+            else:
+                aux_loss = functional.binary_cross_entropy_with_logits(aux, batch.opp[idx])
             kl = magnet.kl(logits, batch.mask[idx], net, batch.obs[idx]).mean()
             loss = -pg + cfg.vf_coef * vf + cfg.aux_coef * aux_loss + reg * kl
             optimizer.zero_grad()

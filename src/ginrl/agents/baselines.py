@@ -78,21 +78,25 @@ class HeuristicAgent:
     def choose(self, env: HandEnv, seat: int) -> int:
         state = env.state()
         info = state.to_dict()
-        hand = melds.parse_hand(info["hands"][seat])
+        layout, hand_size = melds.layout_from_params(state.get_game().get_parameters())
+        hand = melds.parse_hand(info["hands"][seat], layout)
         mask = env.legal_mask()
         tracker = env.trackers[seat]
         phase = str(info["phase"])
         up = info["upcard"]
         if up and phase in ("FirstUpcard", "Draw") and mask[gr.DRAW_UPCARD_ACTION]:
-            up_idx = melds.card_to_index(up)
-            keep = melds.min_deadwood(hand)
+            up_idx = melds.card_to_index(up, layout)
+            keep = melds.min_deadwood(hand, layout, hand_size)
             eleven = hand + [up_idx]
             # Simulate the discard this agent would actually choose (deadwood
             # + danger), not the deadwood-only knock discard: taking a card
             # the danger term then vetoes keeping is a wasted take, and
             # repeated take-and-rediscard ends the hand as an engine draw.
-            planned = min(eleven, key=lambda c: self._discard_cost(eleven, c, tracker))
-            take = melds.min_deadwood([h for h in eleven if h != planned])
+            planned = min(
+                eleven,
+                key=lambda c: self._discard_cost(eleven, c, tracker, layout, hand_size),
+            )
+            take = melds.min_deadwood([h for h in eleven if h != planned], layout, hand_size)
             if keep - take > self.params.pile_draw_aggression:
                 return gr.DRAW_UPCARD_ACTION
             if phase == "Draw" and mask[gr.DRAW_STOCK_ACTION]:
@@ -102,33 +106,45 @@ class HeuristicAgent:
                 return gr.DRAW_STOCK_ACTION
         if phase == "Discard":
             if mask[gr.KNOCK_ACTION]:
-                best = min(melds.min_deadwood([h for h in hand if h != c]) for c in hand)
+                best = min(
+                    melds.min_deadwood([h for h in hand if h != c], layout, hand_size) for c in hand
+                )
                 if best <= self.params.knock_threshold:
                     return gr.KNOCK_ACTION
             options = [c for c in hand if c < N_LEARNED_ACTIONS and mask[c]]
             assert options, "no legal discard"
-            return min(options, key=lambda c: self._discard_cost(hand, c, tracker))
+            return min(
+                options,
+                key=lambda c: self._discard_cost(hand, c, tracker, layout, hand_size),
+            )
         if mask[gr.PASS_ACTION]:
             return gr.PASS_ACTION
         legal = [a for a, m in enumerate(mask) if m]
         assert legal, "no legal action"
         return legal[0]
 
-    def _discard_cost(self, hand: list[int], card: int, tracker) -> float:
+    def _discard_cost(
+        self,
+        hand: list[int],
+        card: int,
+        tracker,
+        layout: melds.CardLayout,
+        hand_size: int,
+    ) -> float:
         rest = [h for h in hand if h != card]
-        deadwood = melds.min_deadwood(rest)
-        return deadwood + self.params.discard_danger_weight * _danger(card, tracker)
+        deadwood = melds.min_deadwood(rest, layout, hand_size)
+        return deadwood + self.params.discard_danger_weight * _danger(card, tracker, layout)
 
 
-def _danger(card: int, tracker) -> float:
+def _danger(card: int, tracker, layout: melds.CardLayout) -> float:
     """How badly the opponent is known to want `card` (0 = safe)."""
     known = tracker.known_cards()
     if not known:
         return 0.0
-    suit, rank = divmod(card, melds.NUM_RANKS)
+    suit, rank = divmod(card, layout.num_ranks)
     score = 0.0
     for other in known:
-        osuit, orank = divmod(other, melds.NUM_RANKS)
+        osuit, orank = divmod(other, layout.num_ranks)
         if osuit == suit and abs(orank - rank) <= 2:
             score += 1.0
         elif orank == rank:

@@ -35,6 +35,11 @@ class RolloutStep:
     done: bool
     seat: int
     opp_card: int  # opponent private card index (aux belief label)
+    # Joint opponent-hand target (multi-hot over the deck) for gin. When any
+    # row in a batch carries one, every row must, and the aux loss switches
+    # from single-label cross-entropy to multilabel BCE. Small-game batches
+    # keep the legacy path bit-identical (gate-p3 calibration).
+    opp_hand: tuple[float, ...] | None = None
 
 
 @dataclass

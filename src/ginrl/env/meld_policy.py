@@ -24,25 +24,37 @@ from ginrl.env import melds
 _PASS = gr.PASS_ACTION
 
 
-def choose_knock_discard(hand: list[int]) -> int:
-    """Discard minimising the deadwood of the remaining 10 cards.
+def _layout_for(state: pyspiel.State) -> tuple[melds.CardLayout, int]:
+    return melds.layout_from_params(state.get_game().get_parameters())
+
+
+def choose_knock_discard(
+    hand: list[int], layout: melds.CardLayout | None = None, hand_size: int | None = None
+) -> int:
+    """Discard minimising the deadwood of the remaining hand.
 
     Deterministic tie-break: lowest deadwood, then lowest card value,
     then lowest index.
     """
     return min(
         hand,
-        key=lambda c: (melds.min_deadwood([h for h in hand if h != c]), melds.card_value(c), c),
+        key=lambda c: (
+            melds.min_deadwood([h for h in hand if h != c], layout, hand_size),
+            melds.card_value(c, layout, hand_size),
+            c,
+        ),
     )
 
 
 def _hand_of(state: pyspiel.State, seat: int) -> list[int]:
-    return melds.parse_hand(state.to_dict()["hands"][seat])
+    layout, _ = _layout_for(state)
+    return melds.parse_hand(state.to_dict()["hands"][seat], layout)
 
 
 def _laid_meld_cards(state: pyspiel.State, seat: int) -> set[int]:
+    layout, _ = _layout_for(state)
     laid = state.to_dict()["layed_melds"][seat]
-    return {melds.card_to_index(c) for meld in laid for c in meld}
+    return {melds.card_to_index(c, layout) for meld in laid for c in meld}
 
 
 def declare_meld_action(state: pyspiel.State) -> int:
@@ -53,13 +65,14 @@ def declare_meld_action(state: pyspiel.State) -> int:
     """
     seat = state.current_player()
     legal = set(state.legal_actions())
+    layout, hand_size = _layout_for(state)
     # Remaining hand plus already-laid cards reconstructs the full knocking
     # hand at any point of the declaration sequence, at any hand size.
     knocker_hand = _hand_of(state, seat) + sorted(_laid_meld_cards(state, seat))
-    target_groups = melds.best_meld_group(knocker_hand)
+    target_groups = melds.best_meld_group(knocker_hand, layout, hand_size)
     laid = _laid_meld_cards(state, seat)
     for group in target_groups:
-        action = melds.meld_action_id(group)
+        action = melds.meld_action_id(group, layout, hand_size)
         if action in legal and not set(group) <= laid:
             return action
     # Target groups all laid (or uncomputable): declare anything left, else pass.
@@ -74,7 +87,8 @@ def layoff_action(state: pyspiel.State) -> int:
     legal = [a for a in state.legal_actions() if a != _PASS]
     if not legal:
         return _PASS
-    return max(legal, key=lambda a: (melds.card_value(a), -a))
+    layout, hand_size = _layout_for(state)
+    return max(legal, key=lambda a: (melds.card_value(a, layout, hand_size), -a))
 
 
 def next_auto_action(state: pyspiel.State) -> int | None:
@@ -95,7 +109,8 @@ def next_auto_action(state: pyspiel.State) -> int | None:
         discards = [a for a in legal if a != _PASS]
         if discards:
             hand = _hand_of(state, state.current_player())
-            choice = choose_knock_discard(hand)
+            layout, hand_size = _layout_for(state)
+            choice = choose_knock_discard(hand, layout, hand_size)
             return choice if choice in discards else sorted(discards)[0]
         return _PASS
     if phase == "Layoff":

@@ -79,8 +79,11 @@ gate-p3:
 gate-p4:
   description: "Phase 4 — reduced gin rummy."
   seeds: 3
-  final_score_spread_max: 1.0  # TODO: uncalibrated, set from the first bake-off.
-  belief_auc_floor: 0.55  # TODO: uncalibrated; scored only over tracker-undetermined cards.
+  final_score_spread_max: 1.0  # Holds as written: worst cross-seed spread is 0.495 (raw).
+  belief_auc_floor: 0.505  # Chance is 0.5 by construction on undetermined cards (se ~0.005); all 15 cells land 0.494-0.522.
+  decision_value_steps: 1000000  # Beliefs need training to matter: 300k reads indifferent, 1M reads +0.12.
+  decision_value_deals: 5000  # n for the winner-continuation paired decision-value CI.
+  entropy_floor: 0.05  # Collapse guard: observed finals are 0.18+, collapse would read ~0.0.
   equal_gradient_step_budget: true
 
 gate-p5:

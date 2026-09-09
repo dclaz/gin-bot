@@ -52,7 +52,7 @@ class TrainResult:
 
 def save_checkpoint(
     path: Path,
-    net: MaskedActorCritic,
+    net: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
     magnet: Magnet,
     gen: torch.Generator,
@@ -78,7 +78,7 @@ def save_checkpoint(
 
 def load_checkpoint(
     path: Path,
-    net: MaskedActorCritic,
+    net: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
     magnet: Magnet,
     gen: torch.Generator,

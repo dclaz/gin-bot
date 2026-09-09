@@ -238,6 +238,18 @@ Verified by running OpenSpiel 2.0.2. Re-verify on the M4 via `make probe`;
    opponent's hand and inverts the belief signal. Undercut is strict, too: a
    tied deadwood scores 0-0 for the knocker, not undercut+25 (METHODOLOGY §1
    said "ties or beats" — wrong; fixed in Phase 1).
+17. **Decision value needs a trained policy.** At 300k steps the learned-vs-
+   ablated paired score reads indifferent (-0.18 [-0.45,+0.09] over 3000
+   deals); at 1M steps it reads +0.12 with CI excluding zero. Measuring the
+   belief ablation on an undertrained net "proves" beliefs are useless.
+   Gate-p4 measures decision value on a 1M winner continuation, never on
+   bake-off cells.
+18. **Exact policy values are out of reach even on tiny gin.** Full-tree
+   enumeration under uniform-random visits 3.9M unique nodes in 80s without
+   finishing on the degenerate 5x1/hand-1 config (extends landmine 5, which
+   covers nash_conv). The match "exact solver" check is bit-exact agreement
+   against an independent raw-engine implementation (tests/test_match_exact.py),
+   never enumeration.
 
 ## Observability
 

@@ -22,6 +22,9 @@ class MatchResult:
     hand_returns: tuple[float, float] | None
     done: bool
     winner: int  # -1 while running
+    # True when the match ended on the max_hands cap rather than the target.
+    # Every cap hit is reported here; the gate asserts zero unreported hits.
+    capped: bool = False
 
 
 @dataclass
@@ -72,7 +75,8 @@ class MatchEnv:
         winner = self._match_winner()
         done = winner >= 0 or self._hand_index + 1 >= self.config.max_hands
         if done:
-            if winner < 0:  # max_hands guard: leader wins
+            capped = winner < 0
+            if capped:  # max_hands guard: leader wins
                 winner = 0 if self._scores[0] >= self._scores[1] else 1
             return MatchResult(
                 hand=step,
@@ -81,9 +85,10 @@ class MatchEnv:
                 hand_returns=hand_returns,
                 done=True,
                 winner=winner,
+                capped=capped,
             )
         self._hand_index += 1
-        return self._wrap(self._reset_hand(), hand_returns=hand_returns)
+        return self._wrap(self._reset_hand(), hand_returns=hand_returns, hand_index=hand_index)
 
     # -- internals -------------------------------------------------------
 
@@ -97,12 +102,15 @@ class MatchEnv:
         return self._hand.reset(seed=self._base_seed * 100003 + self._hand_index)
 
     def _wrap(
-        self, step: StepResult, hand_returns: tuple[float, float] | None = None
+        self,
+        step: StepResult,
+        hand_returns: tuple[float, float] | None = None,
+        hand_index: int | None = None,
     ) -> MatchResult:
         return MatchResult(
             hand=step,
             scores=self._scores,
-            hand_index=self._hand_index,
+            hand_index=self._hand_index if hand_index is None else hand_index,
             hand_returns=hand_returns,
             done=False,
             winner=-1,

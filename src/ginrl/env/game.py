@@ -22,8 +22,8 @@ from pyspiel import gin_rummy as gr
 from ginrl import spiel_facts
 from ginrl.config import HandConfig, Seeds
 from ginrl.env import meld_policy
-from ginrl.env.features import BeliefTracker
-from ginrl.env.melds import NUM_CARDS, card_to_index
+from ginrl.env.features import EVENT_PHASES, BeliefTracker
+from ginrl.env.melds import CardLayout
 
 N_LEARNED_ACTIONS = gr.KNOCK_ACTION + 1  # engine actions 0..55, identity-mapped
 
@@ -61,10 +61,7 @@ class HandEnv:
         self._in_deal = True
         self._stock_order: list[int] | None = None
         self._stock_next = 0
-        self._trackers = [
-            BeliefTracker(0, self.config.knock_card),
-            BeliefTracker(1, self.config.knock_card),
-        ]
+        self._trackers = self._new_trackers()
         self.listener: TransitionListener | None = None
         # Seats whose Knock/Layoff phases are driven externally (engine bots
         # playing natively) instead of the meld auto-policy. Wall stays auto.
@@ -82,10 +79,7 @@ class HandEnv:
         self._in_deal = True
         self._stock_order: list[int] | None = None
         self._stock_next = 0
-        self._trackers = [
-            BeliefTracker(0, self.config.knock_card),
-            BeliefTracker(1, self.config.knock_card),
-        ]
+        self._trackers = self._new_trackers()
         self._state = self._game.new_initial_state()
         self._advance()
         return self._observe(0.0, None)
@@ -94,6 +88,17 @@ class HandEnv:
     def trackers(self) -> list[BeliefTracker]:
         return self._trackers
 
+    @property
+    def _card_layout(self) -> CardLayout:
+        return CardLayout(self.config.num_ranks, self.config.num_suits)
+
+    def _new_trackers(self) -> list[BeliefTracker]:
+        layout = self._card_layout
+        return [
+            BeliefTracker(0, self.config.knock_card, layout, self.config.hand_size),
+            BeliefTracker(1, self.config.knock_card, layout, self.config.hand_size),
+        ]
+
     def features_for(self, seat: int) -> list[float]:
         """BeliefTracker feature vector for a seat at the current state."""
         state = self._require_state()
@@ -101,6 +106,21 @@ class HandEnv:
         learned = str(state.to_dict()["phase"]) in LEARNED_PHASES
         mask = self.legal_mask() if learned and seat == state.current_player() else None
         return self._trackers[seat].features(obs, mask).tolist()
+
+    def tensor_for(self, seat: int) -> tuple[float, ...]:
+        """Padded raw observation tensor for `seat` (actor input)."""
+        return tuple(float(x) for x in self._require_state().observation_tensor(seat))
+
+    def hidden_opp_hand(self, seat: int) -> tuple[int, ...]:
+        """TRUE opponent hand in layout indices — LABEL NAMESPACE.
+
+        Read from the underlying engine state, which (unlike the observation
+        struct) does not mask hidden cards. Never an actor input; used only
+        as the supervised target for the belief head and belief metrics.
+        """
+        hands = self._require_state().to_dict()["hands"][1 - seat]
+        layout = self._card_layout
+        return tuple(sorted(layout.card_to_index(c) for c in hands if c != "XX"))
 
     @property
     def chance_record(self) -> list[int]:
@@ -186,13 +206,18 @@ class HandEnv:
         info = state.to_dict()
         seat = state.current_player()
         upcard = info["upcard"]
-        upcard_idx = card_to_index(upcard) if isinstance(upcard, str) else -1
+        upcard_idx = self._card_layout.card_to_index(upcard) if isinstance(upcard, str) else -1
         if self.listener is not None:
             self.listener(seat, state, seat, action)
         state.apply_action(action)
         self._in_deal = False
+        phase = str(info["phase"])
         for tracker in self._trackers:
-            self._publish(tracker, seat, str(info["phase"]), action, upcard_idx)
+            self._publish(tracker, seat, phase, action, upcard_idx)
+            # Chance never passes through here (only learned/auto moves do),
+            # so the logged (phase, seat, action) stream is public information.
+            if phase in EVENT_PHASES:
+                tracker.observe_event(phase, seat, action)
         if learned:
             for tracker in self._trackers:
                 tracker.observe_turn()
@@ -253,7 +278,7 @@ class HandEnv:
                 # past the first divergent decision.
                 if self._stock_order is None:
                     dealt = set(self._chance_record)
-                    rest = [c for c in range(NUM_CARDS) if c not in dealt]
+                    rest = [c for c in range(self.config.deck_size) if c not in dealt]
                     self._stock_order = self._rng.sample(rest, len(rest))
                 action = self._stock_order[self._stock_next]
                 self._stock_next += 1

@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import random
 
-from ginrl.config import HandConfig, MatchConfig, Seeds
+import pyspiel
+import pytest
+from pyspiel import gin_rummy as gr
+
+from ginrl.config import REDUCED_HAND_CONFIG, HandConfig, MatchConfig, Seeds
+from ginrl.env.features import feature_dim
 from ginrl.env.game import HandEnv
 from ginrl.env.match import MatchEnv
 
@@ -24,6 +29,33 @@ def test_random_hands_finish_zero_sum() -> None:
     rng = random.Random(21)
     for seed in range(30):
         r = _play_hand(env, seed, rng)
+        assert r.returns is not None
+        assert r.returns[0] + r.returns[1] == 0.0
+
+
+def test_reduced_deck_config_enforces_minimum_size() -> None:
+    assert REDUCED_HAND_CONFIG.deck_size == 10
+    minimum = 2 * REDUCED_HAND_CONFIG.hand_size + gr.WALL_STOCK_SIZE + 1
+    assert REDUCED_HAND_CONFIG.deck_size >= minimum
+    with pytest.raises(ValueError):
+        HandConfig(num_ranks=2, num_suits=2, hand_size=2)
+
+
+def test_reduced_hands_use_padded_layout_and_finish_zero_sum() -> None:
+    game = pyspiel.load_game("gin_rummy", REDUCED_HAND_CONFIG.game_params())
+    assert game.num_distinct_actions() == 241
+    assert game.observation_tensor_size() == 644
+    env = HandEnv(REDUCED_HAND_CONFIG, Seeds(41))
+    rng = random.Random(41)
+    for seed in range(42, 52):
+        r = env.reset(seed=seed)
+        assert len(r.mask) == 56
+        assert len(env.features_for(r.seat)) == feature_dim(10)
+        while not r.done:
+            state = env.state()
+            assert all(action < 56 for action in state.legal_actions())
+            legal = [a for a, m in enumerate(r.mask) if m]
+            r = env.step(rng.choice(legal))
         assert r.returns is not None
         assert r.returns[0] + r.returns[1] == 0.0
 
