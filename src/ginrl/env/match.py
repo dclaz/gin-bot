@@ -99,7 +99,23 @@ class MatchEnv:
         return max(leaders, key=lambda i: self._scores[i])
 
     def _reset_hand(self) -> StepResult:
-        return self._hand.reset(seed=self._base_seed * 100003 + self._hand_index)
+        result = self._hand.reset(seed=self._base_seed * 100003 + self._hand_index)
+        self._push_scores()
+        return result
+
+    def _push_scores(self) -> None:
+        """Publish the running score to both trackers (seat-relative).
+
+        Called on every hand boundary, including match reset (0-0). Scores
+        are public, so this is hygiene-safe; without it the match scalars
+        sit at their defaults and the policy cannot learn score dependence.
+        """
+        for seat in (0, 1):
+            self._hand.trackers[seat].set_match_state(
+                my_score=self._scores[seat],
+                opp_score=self._scores[1 - seat],
+                target=float(self.config.target_score),
+            )
 
     def _wrap(
         self,

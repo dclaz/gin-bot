@@ -558,6 +558,16 @@ score-dependent knock threshold, which is the interesting half of the question.
    reduced-game NashConv regression; final claims reproduce over three
    independent seeds; correct for repeated peeking across candidates. (See
    METHODOLOGY §5; `gin-rl.md` §17.)
+8. Eval bill, measured in Phase 4 prep: full-deck duplicate deals run at
+   ~100 deals/s single-threaded vs `SimpleGinRummyBot` (landmine-3 compliant
+   wrapper, fresh bot per game), so the 20k-deal gate leg is ~7 minutes and
+   duplicate matches to 100 are seconds per hundred — head-to-head eval is
+   cheap; RL-BR (which trains a best response) is the expensive leg, budget
+   for that one. Retest belief decision value here: on reduced gin it read
+   indifferent at 300k steps and +0.12 (thin, lo +0.014) at 1M — full-length
+   hands are where opponent modeling should have leverage, so repeat the
+   learned-vs-ablated paired comparison on the champion before claiming
+   beliefs buy decisions at full scale.
 
 **Gate `gate-p5`.**
 - Beats `SimpleGinRummyBot` by a margin exceeding the configured threshold over

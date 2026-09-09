@@ -66,3 +66,31 @@ def test_duplicate_seed_replays_identical_hands() -> None:
     assert _run(3, knock=True) == _run(3, knock=True)
     assert _run(11, knock=True) == _run(11, knock=True)
     assert _run(3, knock=True) != _run(11, knock=True)
+
+
+def test_running_score_reaches_tracker_features() -> None:
+    """The policy observation must change with the match score.
+
+    Match scalars are the last five feature dims
+    (mine, opps, diff, dist-to-target mine/opps, /100). Knock-policy fixture
+    scores (1, 0) on hand 0 of seed 3, so hand 1 opens with those exact
+    scalars, seat-relative. A lone HandEnv keeps defaults (target 100).
+    """
+    import pytest
+
+    from ginrl.env.game import HandEnv
+
+    cfg = MatchConfig(hand=REDUCED_HAND_CONFIG, target_score=30, max_hands=50)
+    env = MatchEnv(config=cfg, seeds=Seeds(master=7))
+    r = env.reset(seed=3)
+    assert env.hand.features_for(0)[-5:] == pytest.approx([0.0, 0.0, 0.0, 0.3, 0.3])
+    while r.hand_returns is None:
+        legal = [i for i, m in enumerate(r.hand.mask) if m]
+        r = env.step(55 if 55 in legal else legal[0])
+    assert r.hand_returns == (1.0, -1.0)
+    assert env.hand.features_for(0)[-5:] == pytest.approx([0.01, 0.0, 0.01, 0.29, 0.3])
+    assert env.hand.features_for(1)[-5:] == pytest.approx([0.0, 0.01, -0.01, 0.3, 0.29])
+
+    lone = HandEnv(config=REDUCED_HAND_CONFIG, seeds=Seeds(master=7))
+    lone.reset(seed=3)
+    assert lone.features_for(0)[-5:] == pytest.approx([0.0, 0.0, 0.0, 1.0, 1.0])
