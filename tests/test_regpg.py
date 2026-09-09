@@ -103,6 +103,11 @@ def test_kl_term_differentiates_policy_not_magnet() -> None:
     ):
         net = tiny_net()
         magnet = Magnet(net, tiny_cfg(magnet_mode=mode, **kwargs))  # type: ignore[arg-type]
+        # Move the learner away from a freshly copied reference. KL is
+        # stationary at an exact match, so without this divergence the test
+        # can depend on platform floating-point dust rather than the gradient.
+        with torch.no_grad():
+            net.policy_head.bias[0] += 0.25
         obs = torch.randn(4, 4)
         mask = torch.ones(4, 2, dtype=torch.bool)
         logits, _, _ = net(obs, mask)
