@@ -34,6 +34,7 @@ NAMESPACES = frozenset(
         "style",
         "perf",
         "tripwire",
+        "match",
     }
 )
 

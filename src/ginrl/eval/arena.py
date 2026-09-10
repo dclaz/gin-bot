@@ -78,9 +78,13 @@ def play_game(agent_a: Agent, agent_b: Agent, seed: int, env: HandEnv) -> GameRe
     env.manual_phases = {s for s, a in enumerate(agents) if a.manual_phases}
 
     def listener(acting_seat: int, state: pyspiel.State, player: int, action: int) -> None:
-        for agent, seat in zip(agents, (0, 1), strict=True):
-            if seat != acting_seat:
-                agent.inform(state, player, action)
+        # Inform EVERY agent including the actor: the OpenSpiel bot protocol
+        # informs each bot of every action, and the C++ reference bot tracks
+        # its own moves through inform_action — skipping self-inform starves
+        # it and it eventually declares off its diverged state (CHECK_TRUE).
+        # Our own agents ignore informs, so this changes nothing for them.
+        for agent in agents:
+            agent.inform(state, player, action)
 
     env.listener = listener
     try:

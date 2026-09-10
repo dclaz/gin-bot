@@ -162,6 +162,12 @@ Every tripwire from IMPLEMENTATION_PLAN.md is logged as *two* series: its curren
 value and its threshold. You want to watch entropy approach the floor over an
 hour, not discover it hit the floor.
 
+### `match/` — is the match episode healthy (Phase 5)
+`match/hands`, `match/matches`, `match/caps` (cumulative episode counters),
+`match/learner_win_frac` (training-match win rate, sparring mix included —
+not a strength claim), `match/win_rate_simplebot` with `_lo`/`_hi` (duplicate
+matches to the target vs the anchor, the low-variance headline).
+
 ### Histograms (every `histogram_every` updates)
 Deadwood at knock, turns to knock, action distribution, value predictions,
 advantages, per-layer gradient norms.

@@ -72,6 +72,12 @@ class MatchConfig:
     hand: HandConfig = field(default_factory=HandConfig)
     target_score: int = 100
     max_hands: int = 1000
+    # False: a finished hand does NOT auto-advance. The step result carries
+    # new_hand_pending and the driver must re-begin agents (fresh engine-bot
+    # state needs the deal informs, which fire during the reset) and call
+    # next_hand(). Engine-bot drivers must use False; auto-advance can never
+    # interleave per-hand begins.
+    auto_advance: bool = True
 
 
 # Magnet modes for the regularised learner (IMPLEMENTATION_PLAN Phase 3).

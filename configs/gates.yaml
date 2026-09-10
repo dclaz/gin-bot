@@ -94,6 +94,8 @@ gate-p5:
   elo_gain_margin: 50  # TODO: uncalibrated, set from the first full run.
   cyclic_fraction_max: 0.2  # TODO: uncalibrated; above this Elo is not the headline.
   reproducibility_tolerance_points_per_hand: 0.5  # TODO: uncalibrated.
+  simplebot_pph_margin: 0.0  # TODO: uncalibrated, set from the first full run.
+  knock_min_bucket_n: 30  # min knocks per extreme score bucket.
   points_per_hand_vs_anchor: true
   match_win_rate_vs_anchor: true
   knock_threshold_moves_with_score: true

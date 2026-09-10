@@ -40,9 +40,8 @@ gate-p3: lint test
 
 gate-p4: lint test
 	$(UV) python scripts/gate_p4.py
-
-gate-p5:
-	@echo "not implemented (Phase 5 — full game)"; exit 1
+gate-p5: lint test
+	$(UV) python scripts/gate_p5.py
 
 gate-p6:
 	@echo "not implemented (Phase 6 — style study)"; exit 1

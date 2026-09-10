@@ -238,6 +238,13 @@ Verified by running OpenSpiel 2.0.2. Re-verify on the M4 via `make probe`;
    opponent's hand and inverts the belief signal. Undercut is strict, too: a
    tied deadwood scores 0-0 for the knocker, not undercut+25 (METHODOLOGY §1
    said "ties or beats" — wrong; fixed in Phase 1).
+17. **Team tuples move agent objects; seats are bound by begin_game.** A seat
+   flip reorders the tuple, so tuple position is never the learner — fish it
+   from a side list by identity (`_seat_team`/`learners`, with an assert).
+   Fishing by position silently built double-opponent teams here: the manual
+   set then covered both seats and learner-side Layoff stopped
+   auto-resolving. Same family: on any hand boundary, rebind seats (flip)
+   *before* reset+wire, so each stateful bot's `begin_game` sees its new seat.
 17. **Decision value needs a trained policy.** At 300k steps the learned-vs-
    ablated paired score reads indifferent (-0.18 [-0.45,+0.09] over 3000
    deals); at 1M steps it reads +0.12 with CI excluding zero. Measuring the

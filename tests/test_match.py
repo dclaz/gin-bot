@@ -94,3 +94,43 @@ def test_running_score_reaches_tracker_features() -> None:
     lone = HandEnv(config=REDUCED_HAND_CONFIG, seeds=Seeds(master=7))
     lone.reset(seed=3)
     assert lone.features_for(0)[-5:] == pytest.approx([0.0, 0.0, 0.0, 1.0, 1.0])
+
+
+def test_manual_advance_drives_engine_bot_across_hands() -> None:
+    """Manual boundaries keep engine-bot state exact across hands.
+
+    Regression: auto-advance resets the next hand inside env.step, so deal
+    informs fire before the driver's per-hand begin_game and the fresh bot
+    misses its own deal (SpielError at the table). With auto_advance=False
+    the driver begins first and a bot-vs-heuristic match completes with
+    accounting intact.
+    """
+    import dataclasses
+
+    from ginrl.agents.baselines import HeuristicAgent
+    from ginrl.agents.spiel_bots import SimpleGinRummyAgent
+    from ginrl.config import HandConfig
+    from ginrl.train.match import drive, wire
+
+    # Full deck: the C++ reference bot does not support reduced configs.
+    cfg = dataclasses.replace(
+        MatchConfig(hand=HandConfig(), target_score=100, max_hands=50),
+        auto_advance=False,
+    )
+    env = MatchEnv(config=cfg, seeds=Seeds(master=7))
+    bot, heur = SimpleGinRummyAgent(config=HandConfig()), HeuristicAgent()
+    agents = (bot, heur)
+    wire(env, agents)
+    r = env.reset(seed=3)
+    hands = 0
+    while not r.done:
+        r = drive(env, agents)
+        if r.hand_returns is not None:
+            hands += 1
+        if r.new_hand_pending:
+            wire(env, agents)
+            r = env.next_hand()
+        assert hands < 60
+    assert hands == r.hand_index + 1
+    assert r.winner in (0, 1)
+    assert r.capped == (not any(s >= 100 for s in r.scores))

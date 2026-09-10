@@ -25,6 +25,9 @@ class MatchResult:
     # True when the match ended on the max_hands cap rather than the target.
     # Every cap hit is reported here; the gate asserts zero unreported hits.
     capped: bool = False
+    # True with auto_advance=False when a hand just ended: the driver must
+    # re-begin agents, then call next_hand(). Never set when done.
+    new_hand_pending: bool = False
 
 
 @dataclass
@@ -53,7 +56,13 @@ class MatchEnv:
         return self._hand
 
     def step(self, action: int) -> MatchResult:
-        step = self._hand.step(action)
+        return self._after(self._hand.step(action))
+
+    def raw_step(self, action: int) -> MatchResult:
+        """Apply any legal engine action (manual-phase bots at Knock/Layoff)."""
+        return self._after(self._hand.raw_step(action))
+
+    def _after(self, step: StepResult) -> MatchResult:
         if not step.done:
             return MatchResult(
                 hand=step,
@@ -87,8 +96,24 @@ class MatchEnv:
                 winner=winner,
                 capped=capped,
             )
+        if not self.config.auto_advance:
+            return MatchResult(
+                hand=step,
+                scores=self._scores,
+                hand_index=hand_index,
+                hand_returns=hand_returns,
+                done=False,
+                winner=-1,
+                new_hand_pending=True,
+            )
         self._hand_index += 1
         return self._wrap(self._reset_hand(), hand_returns=hand_returns, hand_index=hand_index)
+
+    def next_hand(self) -> MatchResult:
+        """Advance to the next hand after a pending boundary (see auto_advance)."""
+        assert not self.config.auto_advance, "next_hand is only for manual advance"
+        self._hand_index += 1
+        return self._wrap(self._reset_hand(), hand_returns=None)
 
     # -- internals -------------------------------------------------------
 
