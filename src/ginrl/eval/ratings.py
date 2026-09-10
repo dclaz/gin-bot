@@ -143,6 +143,53 @@ def fit_ratings(deals: list[DealPair], anchor: str) -> RatingResult:
     )
 
 
+def _logistic_bt_hessian(
+    n_free: int,
+    pos: dict[int, int],
+    anchor_i: int,
+    obs: list[tuple[int, int, float]],
+    margins: list[float],
+    sigma: float,
+    edge: bool = False,
+) -> np.ndarray:
+    """Closed-form Hessian of an L2-penalized logistic pairwise likelihood.
+
+    Observation (i, j) with margin m contributes w=s(m)(1-s(m)) to the (i,i)
+    and (j,j) blocks and -w to the cross terms, plus the prior diagonal.
+    With edge=True there is one extra parameter added to every margin; each
+    observation then also loads w onto the edge diagonal and the edge row.
+    Exactness matters: on large records the numeric Hessian deflects the
+    final step just enough to land at gnorm ~= 1e-4, where the absolute
+    Armijo decrease (~1e-15) is below float resolution of the ~1e4-magnitude
+    objective at every alpha, so the line search fails and the fit raises
+    over 0.07 Elo. The exact Hessian converges quadratically straight past
+    that band.
+    """
+    n = n_free + (1 if edge else 0)
+    h = np.eye(n) / (sigma**2)
+    for (i, j, _y), m in zip(obs, margins, strict=True):
+        s = _sigmoid(m)
+        w = s * (1.0 - s)
+        ii = pos.get(i)
+        jj = pos.get(j)
+        if ii is not None:
+            h[ii, ii] += w
+        if jj is not None:
+            h[jj, jj] += w
+        if ii is not None and jj is not None:
+            h[ii, jj] -= w
+            h[jj, ii] -= w
+        if edge:
+            h[n_free, n_free] += w
+            if ii is not None:
+                h[n_free, ii] += w
+                h[ii, n_free] += w
+            if jj is not None:
+                h[n_free, jj] -= w
+                h[jj, n_free] -= w
+    return h
+
+
 def _solve_paired_bt(
     names: list[str],
     free: list[str],
@@ -184,7 +231,13 @@ def _solve_paired_bt(
                 g[pos[j]] -= residual
         return g
 
-    theta = _newton(nll, grad, np.zeros(len(free)), "rating fit")
+    def hess(theta: np.ndarray) -> np.ndarray:
+        r = ratings_of(theta)
+        return _logistic_bt_hessian(
+            len(free), pos, anchor_i, obs, [r[i] - r[j] for i, j, _ in obs], L2_PRIOR_SIGMA
+        )
+
+    theta = _newton(nll, grad, np.zeros(len(free)), "rating fit", hess=hess)
     try:
         cov = np.linalg.inv(_numeric_hessian(grad, theta))
         ses = np.sqrt(np.maximum(np.diag(cov), 0.0))
@@ -237,11 +290,19 @@ def _numeric_hessian(grad: object, theta: np.ndarray) -> np.ndarray:
     return (hess + hess.T) / 2
 
 
-def _newton(nll: object, grad: object, theta0: np.ndarray, what: str) -> np.ndarray:
+def _newton(
+    nll: object,
+    grad: object,
+    theta0: np.ndarray,
+    what: str,
+    hess: object = None,
+) -> np.ndarray:
     """Damped Newton with backtracking for convex penalized likelihoods.
 
     Deterministic and boring on purpose: quasi-Newton line searches proved
     flaky on benign inputs, and a gate dependency must not roll dice.
+    Pass the closed-form Hessian when one exists (see _paired_bt_hessian for
+    why the numeric fallback can strand the search at the stall floor).
     """
     theta = np.array(theta0, dtype=float)
     val = float(nll(theta))  # type: ignore[operator]
@@ -254,9 +315,9 @@ def _newton(nll: object, grad: object, theta0: np.ndarray, what: str) -> np.ndar
         gnorm = float(np.max(np.abs(g)))
         if gnorm < 1e-7:
             return theta
-        hess = _numeric_hessian(grad, theta)
+        hess_mat = hess(theta) if hess is not None else _numeric_hessian(grad, theta)  # type: ignore[operator]
         try:
-            step = np.linalg.solve(hess + 1e-9 * np.eye(len(theta)), g)
+            step = np.linalg.solve(hess_mat + 1e-9 * np.eye(len(theta)), g)
         except np.linalg.LinAlgError:
             step = g
         cand: np.ndarray | None = None
@@ -328,7 +389,19 @@ def _fit_edge_joint(
             g[-1] += residual
         return g
 
-    theta = _newton(nll, grad, np.zeros(len(free) + 1), "edge fit")
+    def hess(theta: np.ndarray) -> np.ndarray:
+        r, e = unpack(theta)
+        return _logistic_bt_hessian(
+            len(free),
+            pos,
+            anchor_i,
+            legs,
+            [r[i] - r[j] + e for i, j, _ in legs],
+            L2_PRIOR_SIGMA,
+            edge=True,
+        )
+
+    theta = _newton(nll, grad, np.zeros(len(free) + 1), "edge fit", hess=hess)
     try:
         cov = np.linalg.inv(_numeric_hessian(grad, theta))
         se = float(np.sqrt(max(cov[-1, -1], 0.0)))

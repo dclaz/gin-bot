@@ -142,3 +142,32 @@ def test_win_prob_is_sigmoid_of_rating_gap() -> None:
 def test_elo_duel_prob_matches_logistic() -> None:
     assert abs(elo_duel_prob(0.0, 0.0) - 0.5) < 1e-12
     assert abs(elo_duel_prob(400.0, 0.0) - 10 / 11) < 1e-9
+
+
+def test_large_star_record_fits() -> None:
+    """Solver regression: a large star-graph record (every pair involves the
+    champ, as our ladder records do) stalled the numeric-Hessian Newton in
+    both stages — the deflected final step lands at gnorm ~= 1e-4, where the
+    absolute Armijo decrease is below float resolution of the ~1e4-magnitude
+    objective at every alpha. The closed-form Hessian converges quadratically
+    past that band. This input raised 'stalled above tolerance' before it.
+    """
+    elos = {
+        "anchor": 0.0,
+        "champ": -510.0,
+        "c0": -80.0,
+        "c1": -190.0,
+        "c2": -260.0,
+        "c3": -60.0,
+        "c4": -420.0,
+    }
+    deals = []
+    for opp in [n for n in elos if n not in ("anchor", "champ")]:
+        tri = {"anchor": 0.0, "champ": elos["champ"], opp: elos[opp]}
+        for deal in synthetic_deals(tri, 1500, seed=1):
+            if "champ" in (deal.a, deal.b):
+                deals.append(deal)
+    assert len(deals) == 15000
+    res = fit_ratings(deals, "anchor")
+    assert abs(res.elo("champ") + 510.0) <= 60, res.elo("champ")
+    assert abs(res.edge_elo) <= 20, res.edge_elo
