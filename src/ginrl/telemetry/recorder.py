@@ -81,6 +81,12 @@ class RecorderConfig:
     config_hash: str = ""
     dashboard_enabled: bool = True
     flush_every: int = 100  # JSONL + dashboard flush cadence (records)
+    # Dashboard mirror stride in step space, per metric. The JSONL record is
+    # always complete; the Trackio mirror sends the first point and then at
+    # most one point per stride window. Learner metrics (dense in steps) are
+    # decimated ~10x at 20000; eval metrics (sparse in steps) always clear
+    # the stride, so every eval point is still mirrored with no annotation.
+    dashboard_stride_steps: int = 20000
 
 
 class Recorder:
@@ -95,6 +101,7 @@ class Recorder:
         self._file = self.path.open("a", encoding="utf-8")
         self._buffered = 0
         self._closed = False
+        self._last_mirror_step: dict[str, int] = {}
         header = {
             "type": "header",
             "run": config.run_name,
@@ -132,12 +139,21 @@ class Recorder:
             )
             self._sink_ok = False
 
+    def _stride_open(self, step: int, metric: str) -> bool:
+        """True when the dashboard mirror wants this point: first sighting,
+        a step outside the stride window, or a backward step (new epoch)."""
+        last = self._last_mirror_step.get(metric)
+        if last is None or step < last:
+            return True
+        return step - last >= self.config.dashboard_stride_steps
+
     def log_scalar(self, step: int, metric: str, value: float) -> None:
         check_metric(metric)
         self._write({"type": "scalar", "step": step, "metric": metric, "value": float(value)})
         self._buffered += 1
-        # Mirror immediately; buffering only batches the file flush.
-        self._mirror(metric, "scalar", step, metric, float(value))
+        if self._stride_open(step, metric):
+            self._last_mirror_step[metric] = step
+            self._mirror(metric, "scalar", step, metric, float(value))
         self._maybe_flush()
 
     def log_histogram(self, step: int, metric: str, values: Sequence[float]) -> None:
@@ -158,7 +174,9 @@ class Recorder:
             }
         )
         self._buffered += 1
-        self._mirror(metric, "histogram", step, metric, list(values))
+        if self._stride_open(step, metric):
+            self._last_mirror_step[metric] = step
+            self._mirror(metric, "histogram", step, metric, list(values))
         self._maybe_flush()
 
     def log_table(
@@ -179,7 +197,9 @@ class Recorder:
             }
         )
         self._buffered += 1
-        self._mirror(metric, "table", step, metric, columns, rows)
+        if self._stride_open(step, metric):
+            self._last_mirror_step[metric] = step
+            self._mirror(metric, "table", step, metric, columns, rows)
         self._maybe_flush()
 
     def _maybe_flush(self) -> None:

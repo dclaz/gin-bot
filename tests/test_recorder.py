@@ -40,6 +40,48 @@ def test_jsonl_has_header_scalars_histogram_table(tmp_path: Path) -> None:
     assert table["columns"] == ["agent", "elo"] and table["rows"] == [["a", "0"]]
 
 
+def test_dashboard_stride_decimates_dense_keeps_sparse(tmp_path: Path) -> None:
+    """Mirror stride is per metric in step space: dense learner streams are
+    decimated, sparse eval streams pass untouched, the JSONL keeps everything."""
+
+    class CaptureSink:
+        def __init__(self) -> None:
+            self.scalars: list[tuple[int, str, float]] = []
+
+        def scalar(self, step: int, metric: str, value: float) -> None:
+            self.scalars.append((step, metric, value))
+
+        def finish(self) -> None:
+            pass
+
+        def histogram(self, step: int, metric: str, values: object) -> None:
+            raise AssertionError("no histograms logged here")
+
+        def table(self, step: int, metric: str, columns: object, rows: object) -> None:
+            raise AssertionError("no tables logged here")
+
+    sink = CaptureSink()
+    with Recorder(
+        RecorderConfig(
+            run_dir=tmp_path / "run",
+            run_name="stride",
+            dashboard_stride_steps=300,
+        ),
+        dashboard=sink,  # type: ignore[arg-type]
+    ) as rec:
+        for step in range(0, 1000, 100):  # dense learner stream
+            rec.log_scalar(step, "loss/total", float(step))
+        rec.log_scalar(0, "ratings/current_elo", -800.0)  # sparse eval stream
+        rec.log_scalar(50000, "ratings/current_elo", -479.0)
+        rec.log_scalar(50, "loss/total", -1.0)  # backward step mirrors
+    records = _read_lines(tmp_path / "run" / "metrics.jsonl")
+    assert len(records) == 14  # header + 10 dense + 2 sparse + 1 backward
+    dense = [s for s in sink.scalars if s[1] == "loss/total"]
+    assert [s[0] for s in dense] == [0, 300, 600, 900, 50]
+    sparse = [s for s in sink.scalars if s[1] == "ratings/current_elo"]
+    assert [s[0] for s in sparse] == [0, 50000]
+
+
 def test_unknown_namespace_is_rejected(tmp_path: Path) -> None:
     with Recorder(
         RecorderConfig(run_dir=tmp_path / "run", run_name="smoke", dashboard_enabled=False)
@@ -67,7 +109,7 @@ def test_dying_sink_does_not_kill_the_run(tmp_path: Path) -> None:
             raise ConnectionError("dashboard died mid-run")
 
     with Recorder(
-        RecorderConfig(run_dir=tmp_path / "run", run_name="smoke"),
+        RecorderConfig(run_dir=tmp_path / "run", run_name="smoke", dashboard_stride_steps=1),
         dashboard=FlakySink(),  # type: ignore[arg-type]
     ) as rec:
         with pytest.warns(UserWarning, match="dashboard sink failed"):

@@ -40,6 +40,17 @@ artifacts are for decisions. No gate, table or claim in the write-up may be
 scraped from a dashboard. If a sink dies mid-run the run continues — every
 optional sink is wrapped and degrades to a warning.
 
+**The dashboard is a decimated view.** The Recorder mirrors every record to
+the JSONL and only a stride-sampled subset to Trackio
+(`dashboard_stride_steps`, default 20000 steps, per metric): dense learner
+streams land ~10x sparser, sparse eval streams always clear the stride so no
+eval point is ever skipped. The dashboard must stay readable while a 5M-step
+run puts 35k rows in the JSONL; anyone who needs full density reads the
+JSONL. One row per scalar per round is the other half of the old bloat —
+batching the mirror into one dict per round would cut rows ~17x further, but
+was measured unnecessary once the stride landed (134k -> 99k rows, 45 -> 32MB
+after decimating the one live run's history).
+
 ```bash
 make board          # trackio show --project ginrl
 make elo            # refit ratings from the game record, print the ladder
