@@ -75,3 +75,16 @@ Append-only: new runs add sections, never rewrite old ones.
   sign-off still pending, gate file untouched. Trend: +2.7 anchor / +3.0
   heuristic pph per 10M steps; linear arithmetic points at heuristic
   parity ~42M and anchor parity ~52M — a projection, not a promise.
+- Fourth full gate at 50M (`runs/p5_s0`, 50,001,920 steps, best
+  `snapshots/round_23400.pt`, first 25M single-process + last 25M on the
+  8-then-4-worker pool): 6/10 pass. beats-anchor -4.78 [-4.97,-4.59]
+  n=20000 (from -7.28), matches 0.247 [0.213,0.280] n=600 (from 0.135),
+  knock buckets PASS 134/101, heuristic -2.18 [-2.78,-1.65] (from -5.11),
+  champ BR bound -33.86 vs heur -35.02 vs bot -49.34 (ordering preserved),
+  elo +591 (from +530), cyclic 0.000, first-player-edge [+4.2,+7.1] PASS
+  under the signed-off |25| tolerance, overhead 0.0003, repro
+  bit-identical. Zero eval-worker failures across the whole pool segment.
+  Slope 25M->50M fell to +0.10 anchor pph/M (from +0.27): the grind works
+  but is decelerating — current-slope parity sits past 100M. Schedule
+  exhausted (alpha/lr ~ 0); entropy has no bonus term, so post-anneal the
+  policy can only sharpen. Critic explained variance flat ~0.49.
