@@ -99,3 +99,12 @@ Append-only: new runs add sections, never rewrite old ones.
   (no lr, no learning either way). Post-convergence schedule tweaks are
   dead ends. The 50M champion stands on this recipe; remaining levers are
   an earlier-checkpoint reheat, capacity reopen, or accepting into Phase 6.
+- Capacity reopen (`runs/capacity`, reduced deck, 300k steps x 3 seeds, same
+  protocol as Phase 4): mlp-h128 +0.752 [+0.717,+0.818] (58k params),
+  mlp-h512 +0.792 [+0.681,+0.888] (624k), mlp-h512x4 +0.810 [+0.767,+0.833]
+  (1.67M), seq-h256 +0.750, hybrid-h256 +0.612, set-h256 +0.206. 30x params
+  buys +0.06 with heavily overlapping CIs, at 3.5x inference cost; belief
+  AUC flat 0.51-0.52 everywhere; no entropy collapse anywhere. Verdict:
+  capacity is not the lever — the torso just needs to be smooth on top of
+  BeliefTracker features, and event-order models don't beat the MLP either.
+  The -4.78 full-game gap is schedule/algorithm, not size.
