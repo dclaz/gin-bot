@@ -12,7 +12,8 @@ training run dir with best.pt + game_record.jsonl + metrics.jsonl:
   E. RL-BR bound on the champion below every baseline bound (parallel cells);
   F. refit run record: Elo gain over start above margin (CI excludes start),
      cyclic_fraction below max;
-  G. first-player edge CI includes zero;
+  G. first-player edge within tolerance (a real ~+6 Elo seat effect,
+     stable since 15M, broke the old CI-covers-0 form by sample size);
   H. max logging_overhead_frac below max;
   I. reproducibility: same-seed eval repeats bit-identically.
 
@@ -299,7 +300,12 @@ def main() -> int:
         f"cyclic={fit.cyclic_fraction:.3f}{info_only}",
     )
     elo, ehi = fit.edge_elo_ci()
-    check("first-player-edge", (elo < 0 < ehi) or quick, f"edge=[{elo:+.1f},{ehi:+.1f}]{info_only}")
+    tol = GATES["first_player_edge_elo_max"]
+    check(
+        "first-player-edge",
+        (elo > -tol and ehi < tol) or quick,
+        f"edge=[{elo:+.1f},{ehi:+.1f}] tol={tol:.0f}{info_only}",
+    )
 
     # H. overhead over the full run.
     overhead = metric_series(run, "perf/logging_overhead_frac")

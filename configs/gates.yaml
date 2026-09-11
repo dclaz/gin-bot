@@ -95,6 +95,7 @@ gate-p5:
   cyclic_fraction_max: 0.2  # TODO: uncalibrated; above this Elo is not the headline.
   reproducibility_tolerance_points_per_hand: 0.5  # TODO: uncalibrated.
   simplebot_pph_margin: 0.0  # TODO: uncalibrated, set from the first full run.
+  first_player_edge_elo_max: 25.0  # was CI-covers-0 (hardcoded in gate_p5.py).
   knock_min_bucket_n: 30  # min knocks per extreme score bucket.
   points_per_hand_vs_anchor: true
   match_win_rate_vs_anchor: true
