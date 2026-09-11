@@ -558,6 +558,10 @@ def train_match(
     feat_dim = feature_dim(deck)
     envs = [MatchEnv(config=match_config, seeds=seeds) for _ in range(cfg.n_envs)]
     net = GinNet(torso, feat_dim=feat_dim, deck=deck, hidden=128).to(dev)
+    if cfg.orthogonal_init:
+        from ginrl.nets.actor_critic import apply_orthogonal
+
+        apply_orthogonal(net)
     optimizer = torch.optim.Adam(net.parameters(), lr=cfg.lr)
     magnet = Magnet(net, cfg)
     gen = torch.Generator().manual_seed(master_seed + 1)

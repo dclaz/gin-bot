@@ -131,6 +131,9 @@ class TrainerConfig:
     # every calibrated small-game recipe bit-identical.
     reward_scale: float = 1.0
     advantage: str = "gae"  # "gae" | "mc" (estimator guard decides)
+    # Probe knobs (Phase 5 capacity follow-up). Both default off = legacy.
+    clipped_vf: bool = False  # CleanRL-style clipped value loss
+    orthogonal_init: bool = False  # orthogonal Linear init at construction
     anneal: str = "none"  # "none" | "linear" (lr and reg_coef -> 0)
     magnet_mode: str = MAGNET_UNIFORM
     magnet_ema_decay: float = 0.999

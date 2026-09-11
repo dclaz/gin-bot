@@ -44,7 +44,13 @@ class BakeoffCell:
     final_entropy: float
 
 
-def bakeoff_cfg(total_steps: int, seed: int) -> TrainerConfig:
+def bakeoff_cfg(
+    total_steps: int,
+    seed: int,
+    *,
+    clipped_vf: bool = False,
+    orthogonal_init: bool = False,
+) -> TrainerConfig:
     return TrainerConfig(
         total_steps=total_steps,
         n_envs=16,
@@ -55,6 +61,8 @@ def bakeoff_cfg(total_steps: int, seed: int) -> TrainerConfig:
         magnet_mode="uniform",
         reg_coef=0.1,
         reward_scale=0.1,
+        clipped_vf=clipped_vf,
+        orthogonal_init=orthogonal_init,
     )
 
 
@@ -97,6 +105,8 @@ def run_cell(
     hidden: int = 128,
     layers: int = 2,
     tag: str | None = None,
+    clipped_vf: bool = False,
+    orthogonal_init: bool = False,
 ) -> BakeoffCell:
     """Train one (torso, seed) cell and evaluate it fully.
 
@@ -107,7 +117,7 @@ def run_cell(
     if torso not in GIN_TORSOS:
         raise ValueError(f"unknown torso {torso!r}")
     run_dir = parent / (tag or f"{torso}-s{seed}")
-    cfg = bakeoff_cfg(total_steps, seed)
+    cfg = bakeoff_cfg(total_steps, seed, clipped_vf=clipped_vf, orthogonal_init=orthogonal_init)
     result = train_gin_selfplay(
         REDUCED_HAND_CONFIG,
         torso,

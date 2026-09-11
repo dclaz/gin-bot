@@ -313,7 +313,14 @@ def ppo_update(
                 ratio * batch.adv[idx],
                 ratio.clamp(1.0 - cfg.clip_eps, 1.0 + cfg.clip_eps) * batch.adv[idx],
             ).mean()
-            vf = functional.mse_loss(value, batch.ret[idx])
+            vf_unclipped = functional.mse_loss(value, batch.ret[idx])
+            if cfg.clipped_vf:
+                v_clipped = batch.value_old[idx] + (value - batch.value_old[idx]).clamp(
+                    -cfg.clip_eps, cfg.clip_eps
+                )
+                vf = torch.max(vf_unclipped, functional.mse_loss(v_clipped, batch.ret[idx]))
+            else:
+                vf = vf_unclipped
             if batch.opp.dtype == torch.long:
                 aux_loss = functional.cross_entropy(aux, batch.opp[idx])
             else:

@@ -180,6 +180,10 @@ def train_gin_selfplay(
     feat_dim = feature_dim(deck)
     envs = [HandEnv(config, seeds) for _ in range(cfg.n_envs)]
     net = GinNet(torso, feat_dim=feat_dim, deck=deck, hidden=hidden, layers=layers).to(dev)
+    if cfg.orthogonal_init:
+        from ginrl.nets.actor_critic import apply_orthogonal
+
+        apply_orthogonal(net)
     optimizer = torch.optim.Adam(net.parameters(), lr=cfg.lr)
     magnet = Magnet(net, cfg)
     gen = torch.Generator().manual_seed(master_seed + 1)

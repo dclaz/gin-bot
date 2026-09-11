@@ -47,6 +47,16 @@ class ResidualBlock(nn.Module):
         return x + self.net(x)
 
 
+def apply_orthogonal(net: nn.Module, gain: float = 1.0) -> nn.Module:
+    """Orthogonal Linear init (PPO folk default), biases to zero. In-place."""
+    for mod in net.modules():
+        if isinstance(mod, nn.Linear):
+            nn.init.orthogonal_(mod.weight, gain=gain)
+            if mod.bias is not None:
+                nn.init.zeros_(mod.bias)
+    return net
+
+
 class MaskedActorCritic(nn.Module):
     """Residual-MLP torso + policy / value / opponent-card heads."""
 

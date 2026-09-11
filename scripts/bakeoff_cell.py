@@ -33,6 +33,8 @@ def main() -> int:
     parser.add_argument("--hidden", type=int, default=128)
     parser.add_argument("--layers", type=int, default=2)
     parser.add_argument("--tag", default=None)
+    parser.add_argument("--clipped-vf", action="store_true")
+    parser.add_argument("--orthogonal-init", action="store_true")
     args = parser.parse_args()
     with open(args.belief_states, "rb") as fh:
         belief_states = pickle.load(fh)
@@ -49,6 +51,8 @@ def main() -> int:
         hidden=args.hidden,
         layers=args.layers,
         tag=args.tag,
+        clipped_vf=args.clipped_vf,
+        orthogonal_init=args.orthogonal_init,
     )
     out = Path(args.parent) / (args.tag or f"{args.torso}-s{args.seed}") / "cell.json"
     out.write_text(json.dumps(cell_dict(cell), indent=2))
