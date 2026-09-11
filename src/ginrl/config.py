@@ -112,6 +112,10 @@ class TrainerConfig:
     total_steps: int = 200_000
     n_envs: int = 16
     rollout_len: int = 128
+    # Collection workers for the match path (design A pool). 1 = legacy
+    # single-process collect_match, bit-for-bit today's behavior. >1 shards
+    # envs across spawned CPU workers; must divide n_envs evenly.
+    collect_workers: int = 1
     epochs: int = 4
     minibatches: int = 4
     lr: float = 3e-4
@@ -151,6 +155,14 @@ class TrainerConfig:
         _require(
             self.minibatches <= self.n_envs * self.rollout_len,
             "minibatches exceeds rollout batch size",
+        )
+        _require(
+            self.collect_workers >= 1, f"collect_workers must be >= 1, got {self.collect_workers}"
+        )
+        _require(
+            self.n_envs % self.collect_workers == 0,
+            f"n_envs ({self.n_envs}) must split evenly across collect_workers "
+            f"({self.collect_workers})",
         )
         _require(
             0.0 <= self.magnet_ema_decay <= 1.0,

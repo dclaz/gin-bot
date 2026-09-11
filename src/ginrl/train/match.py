@@ -410,6 +410,111 @@ def match_win_rate(
     return s.mean, s.lo, s.hi
 
 
+def _maybe_make_pool(cfg, match_config, target_score, max_hands, master_seed, run):
+    """Design-A pool when configured; None keeps the legacy single-process path."""
+    if cfg.collect_workers <= 1:
+        return None
+    from ginrl.train.pool import PoolCollector
+
+    return PoolCollector(
+        cfg.collect_workers,
+        cfg.n_envs,
+        match_config.hand,
+        target_score,
+        max_hands,
+        master_seed,
+        run,
+    )
+
+
+def _collect_round(
+    pool,
+    envs,
+    net,
+    cfg,
+    gen,
+    dev,
+    feat_dim,
+    reward_scale,
+    match_bonus,
+    run,
+    rng,
+    match_seed,
+    deal_round,
+):
+    """One rollout round through the pool or the legacy collector (same tuple)."""
+    if pool is not None:
+        return pool.collect(
+            {k: v.cpu() for k, v in net.state_dict().items()},
+            cfg.batch_size,
+            match_seed,
+            reward_scale,
+            match_bonus,
+            deal_round,
+        )
+    return collect_match(
+        envs,
+        net,
+        cfg.batch_size,
+        gen,
+        dev,
+        feat_dim,
+        reward_scale,
+        match_bonus,
+        run,
+        rng,
+        match_seed,
+    )
+
+
+def _snapshot_and_eval(
+    net,
+    run,
+    deal_round,
+    snapshot_every,
+    eval_every,
+    cfg,
+    steps_done,
+    workers,
+    agent_name,
+    master_seed,
+    eval_deals,
+    belief_states_n,
+    probe_matches,
+    match_probe_every,
+    target_score,
+    scanned,
+    recorder,
+    result,
+    learner_time,
+    eval_time,
+):
+    """Snapshot cadence plus the eval block; returns the eval_time increment."""
+    if deal_round % snapshot_every == 0:
+        torch.save(net.state_dict(), run / "snapshots" / f"round_{deal_round}.pt")
+    if deal_round % eval_every == 0 or steps_done >= cfg.total_steps:
+        return _eval_block(
+            deal_round=deal_round,
+            steps_done=steps_done,
+            workers=workers,
+            run=run,
+            agent_name=agent_name,
+            master_seed=master_seed,
+            eval_deals=eval_deals,
+            belief_n=belief_states_n,
+            probe_matches=probe_matches,
+            match_probe_every=match_probe_every,
+            final=steps_done >= cfg.total_steps,
+            target_score=target_score,
+            scanned=scanned,
+            recorder=recorder,
+            result=result,
+            learner_time=learner_time,
+            eval_time=eval_time,
+        )
+    return 0.0
+
+
 def train_match(
     hand_config: HandConfig | None = None,
     torso: str = "mlp",
@@ -471,12 +576,14 @@ def train_match(
         else set()
     )
     eval_failed = 0
+    pool = _maybe_make_pool(cfg, match_config, target_score, max_hands, master_seed, run)
     while steps_done < cfg.total_steps:
         t0 = time.perf_counter()
-        steps, logps, values, match_seed, mstats = collect_match(
+        steps, logps, values, match_seed, mstats = _collect_round(
+            pool,
             envs,
             net,
-            cfg.batch_size,
+            cfg,
             gen,
             dev,
             feat_dim,
@@ -485,6 +592,7 @@ def train_match(
             run,
             rng,
             match_seed,
+            deal_round,
         )
         (run / "match_state.json").write_text(json.dumps({"match_seed": match_seed}))
         batch = make_batch(steps, logps, values, cfg, dev)
@@ -503,29 +611,29 @@ def train_match(
         recorder.log_scalar(
             steps_done, "match/learner_win_frac", mstats["learner_wins"] / max(mstats["matches"], 1)
         )
-        if deal_round % snapshot_every == 0:
-            torch.save(net.state_dict(), run / "snapshots" / f"round_{deal_round}.pt")
         eval_failed += reap_workers(workers, run)
-        if deal_round % eval_every == 0 or steps_done >= cfg.total_steps:
-            eval_time += _eval_block(
-                deal_round=deal_round,
-                steps_done=steps_done,
-                workers=workers,
-                run=run,
-                agent_name=agent_name,
-                master_seed=master_seed,
-                eval_deals=eval_deals,
-                belief_n=belief_states_n,
-                probe_matches=probe_matches,
-                match_probe_every=match_probe_every,
-                final=steps_done >= cfg.total_steps,
-                target_score=target_score,
-                scanned=scanned,
-                recorder=recorder,
-                result=result,
-                learner_time=learner_time,
-                eval_time=eval_time,
-            )
+        eval_time += _snapshot_and_eval(
+            net,
+            run,
+            deal_round,
+            snapshot_every,
+            eval_every,
+            cfg,
+            steps_done,
+            workers,
+            agent_name,
+            master_seed,
+            eval_deals,
+            belief_states_n,
+            probe_matches,
+            match_probe_every,
+            target_score,
+            scanned,
+            recorder,
+            result,
+            learner_time,
+            eval_time,
+        )
         save_checkpoint(
             run / "checkpoint.pt",
             net,
@@ -536,6 +644,8 @@ def train_match(
             deal_round,
             match_seed,
         )
+    if pool is not None:
+        pool.close()
     torch.save(net.state_dict(), run / "final.pt")
     for _ in range(180):  # drain eval workers (<=15 min) for final selection
         eval_failed += reap_workers(workers, run)
