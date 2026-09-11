@@ -9,6 +9,7 @@ from ginrl.eval.ratings import (
     ELO_SCALE,
     DealPair,
     LegRecord,
+    _decrease_unrepresentable,
     _newton,
     elo_duel_prob,
     fit_ratings,
@@ -164,6 +165,39 @@ def test_newton_returns_at_truncation_floor_but_raises_when_stuck() -> None:
     assert np.allclose(out, np.zeros(3))
     with pytest.raises(RuntimeError, match="stalled above tolerance"):
         _newton(flat_nll, big_grad, np.zeros(3), "stuck probe")
+
+
+def test_newton_bottom_test_is_relative_to_objective_scale() -> None:
+    """The numeric-bottom test fires on the predicted decrease vs |val|, not
+    on a fixed gradient floor. Regime values come from a measured 128k-leg
+    edge fit: at the bottom gnorm ~= 3e-3 sat above the 2e-3 floor while the
+    squared Newton decrement (~3e-10) predicted a decrease far below float
+    resolution of the ~6.4e4-magnitude objective — a last-ulp coin flip there
+    is the intermittent eval-worker stall."""
+
+    assert _decrease_unrepresentable(64031.1, 3e-10)  # bottom: must return
+    assert not _decrease_unrepresentable(64031.1, 36208.0)  # iter 0: proceed
+    assert not _decrease_unrepresentable(64031.1, 0.0)  # no direction: loud
+    assert not _decrease_unrepresentable(64031.1, -1.5)  # ascent: loud
+    assert _decrease_unrepresentable(0.5, 1e-13)  # scales with small |val|
+
+
+def test_newton_converges_far_and_raises_when_flat() -> None:
+    """Far from the optimum the search must converge normally; an
+    inconsistent nll/grad pair (flat objective, nonzero gradient: predicted
+    decrease easily representable yet no step progresses) must still raise —
+    the relative test must not mask a genuinely stuck search."""
+
+    def big_nll(theta: np.ndarray) -> float:
+        return 1e9 + float(np.sum(theta * theta) / 2.0)
+
+    def big_grad(theta: np.ndarray) -> np.ndarray:
+        return np.asarray(theta, dtype=float)
+
+    out = _newton(big_nll, big_grad, np.full(3, 10.0), "far probe")
+    assert np.max(np.abs(out)) < 1e-7
+    with pytest.raises(RuntimeError, match="stalled above tolerance"):
+        _newton(lambda t: 50325.75, big_grad, np.full(3, 10.0), "flat probe")
 
 
 def test_elo_duel_prob_matches_logistic() -> None:
