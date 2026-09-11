@@ -111,3 +111,7 @@ Append-only: new runs add sections, never rewrite old ones.
 - `runs/p5_long` started: fresh from-scratch 100M run, same seed and recipe,
   2x-slower linear schedule (lr/reg alive to 100M), 4 pool workers. Tests
   "more learning" cleanly after the reheat failure; magnet monotonic.
+- Plumbing screen (`runs/plumbing`, 300k x 3 seeds): default +0.752
+  [+0.717,+0.818] vs clipped-VF + orthogonal +0.791 [+0.755,+0.848].
+  Overlapping; per-cell CIs +-0.28 confirm 300k/2k-deal cells cannot
+  resolve small gaps. Confirmatory 1M-step / 10k-deal pair running.
