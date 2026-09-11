@@ -108,3 +108,6 @@ Append-only: new runs add sections, never rewrite old ones.
   capacity is not the lever — the torso just needs to be smooth on top of
   BeliefTracker features, and event-order models don't beat the MLP either.
   The -4.78 full-game gap is schedule/algorithm, not size.
+- `runs/p5_long` started: fresh from-scratch 100M run, same seed and recipe,
+  2x-slower linear schedule (lr/reg alive to 100M), 4 pool workers. Tests
+  "more learning" cleanly after the reheat failure; magnet monotonic.
