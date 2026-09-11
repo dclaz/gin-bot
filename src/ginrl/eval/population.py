@@ -63,14 +63,26 @@ def nash_averaging(names: list[str], payoff: np.ndarray) -> NashMixture:
         {"type": "eq", "fun": lambda q: float(np.sum(q)) - 1.0},
         {"type": "ineq", "fun": lambda q, a=a: value + 1e-9 - (a @ q)},
     ]
-    sol = minimize(
-        neg_entropy,
-        np.full(n, 1.0 / n),
-        method="SLSQP",
-        bounds=[(0.0, 1.0)] * n,
-        constraints=cons,
-        options={"maxiter": 1000, "ftol": 1e-12},
-    )
+
+    def _solve(x0: np.ndarray) -> object:
+        return minimize(
+            neg_entropy,
+            x0,
+            method="SLSQP",
+            bounds=[(0.0, 1.0)] * n,
+            constraints=cons,
+            options={"maxiter": 10000, "ftol": 1e-9},
+        )
+
+    # ftol 1e-12 starved the solver on noisy matrices (a 20-deal smoke hit
+    # "Iteration limit reached"); 1e-9 is ~1e-9 nats off the max-entropy
+    # point, far below any reporting precision. Second start from the LP
+    # vertex covers infeasible-start stalls; both must fail to raise.
+    sol = _solve(np.full(n, 1.0 / n))
+    if not sol.success:
+        vertex = np.zeros(n)
+        vertex[int(np.argmax(lp.x[:n]))] = 1.0
+        sol = _solve(vertex)
     if not sol.success:
         raise RuntimeError(f"max-entropy Nash failed: {sol.message}")
     w = np.clip(sol.x, 0.0, 1.0)

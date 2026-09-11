@@ -36,6 +36,21 @@ def test_cloning_moves_no_other_mass() -> None:
         assert delta < 1e-6, (name, delta)
 
 
+def test_noisy_matrix_converges() -> None:
+    """A noisy near-tied 7x7 (20-deal-style smoke) must solve, not stall.
+
+    Regression: SLSQP with maxiter=1000/ftol=1e-12 raised 'Iteration limit
+    reached' here. The solve quality bar is max_regret, not iterations."""
+    rng = np.random.default_rng(11)
+    base = rng.normal(0.0, 3.0, size=(7, 7))
+    payoff = (base - base.T) / 2
+    names = [f"s{i}" for i in range(7)]
+    mix = nash_averaging(names, payoff)
+    assert abs(sum(mix.weights.values()) - 1.0) < 1e-6
+    assert all(w >= -1e-9 for w in mix.weights.values())
+    assert mix.max_regret < 1e-4, mix.max_regret
+
+
 def test_seat_mirror_residual_is_checked() -> None:
     names = ["x", "y"]
     bad = np.array([[0.0, 3.0], [1.0, 0.0]])  # not antisymmetric

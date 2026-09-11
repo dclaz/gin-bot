@@ -36,11 +36,19 @@ class GinNetAgent:
     name = "gin-net"
     manual_phases = False
 
-    def __init__(self, net: GinNet, feat_dim: int, device: torch.device, seed: int = 0) -> None:
+    def __init__(
+        self,
+        net: GinNet,
+        feat_dim: int,
+        device: torch.device,
+        seed: int = 0,
+        temperature: float = 1.0,
+    ) -> None:
         self.net = net.to(device).eval()
         self.feat_dim = feat_dim
         self.device = device
         self._rng = random.Random(seed)
+        self.temperature = temperature
 
     def begin_game(self, seat: int) -> None:
         pass
@@ -57,7 +65,7 @@ class GinNetAgent:
         legal_mask = torch.as_tensor([mask[:N_LEARNED_ACTIONS]], dtype=torch.bool).to(self.device)
         with torch.no_grad():
             logits, _, _ = self.net(obs, legal_mask)
-        probs = torch.softmax(logits.squeeze(0), dim=-1).tolist()
+        probs = torch.softmax(logits.squeeze(0) / self.temperature, dim=-1).tolist()
         legal = [a for a, allowed in enumerate(mask) if allowed]
         total = sum(probs[a] for a in legal)
         roll, acc = self._rng.random() * total, 0.0
