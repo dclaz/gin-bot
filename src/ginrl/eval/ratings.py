@@ -307,17 +307,20 @@ def _newton(
     theta = np.array(theta0, dtype=float)
     val = float(nll(theta))  # type: ignore[operator]
     # Gradient 1e-7 is ~1e-9 logits past the optimum: far below any reporting
-    # precision. The no-progress limit below is 1e-3 (was 1e-4): at most
-    # 1e-3/0.25 = 4e-3 logits ≈ 0.7 Elo worst case through the L2 prior
-    # floor, against CI widths of ±50. It has to be this loose because the
-    # Armijo decrease is absolute while the objective grows with the record:
-    # on a 60k-leg record the search can land at gnorm ~= 1e-4 with the true
-    # decrease (~1e-16) unrepresentable against the ~3e4-magnitude objective
-    # at every alpha — no line search on absolute nll can progress there, so
-    # returning is correct and raising breaks gates over 0.07 Elo. The floor
-    # scales with record size; revisit if records grow 10x. Normal
-    # convergence still exits through the 1e-7 gate; only the numeric bottom
-    # lands here.
+    # precision. The no-progress limit below is 2e-3 (was 1e-4, then 1e-3):
+    # at most 2e-3/0.25 = 8e-3 logits ≈ 1.5 Elo worst case through the L2
+    # prior floor, against CI widths of ±50. It has to sit above the
+    # resolvability band, which scales with record size: the Armijo decrease
+    # is absolute while the objective grows with n, so past ~60k legs the
+    # search can land at gnorm ~= 1e-4..1e-3 with the true decrease
+    # unrepresentable against the ~1e4-magnitude objective at every alpha —
+    # no line search on absolute nll can progress there (the ratio is
+    # scale-free: mean-instead-of-sum changes nothing), so returning is
+    # correct and raising breaks gates over noise. Rule of thumb from two
+    # measured stalls: the band edge sits near gnorm ~= 1e-8 * n_legs, so
+    # 2e-3 covers ~200k legs; revisit with a relative criterion past that.
+    # Normal convergence still exits through the 1e-7 gate; only the numeric
+    # bottom lands here.
     for _ in range(100):
         g = np.asarray(grad(theta), dtype=float)  # type: ignore[operator]
         gnorm = float(np.max(np.abs(g)))
@@ -337,14 +340,14 @@ def _newton(
                 break
             alpha *= 0.5
         if cand is None:
-            if gnorm < 1e-3:
+            if gnorm < 2e-3:
                 return theta
             raise RuntimeError(f"{what} stalled above tolerance")
         new_val = float(nll(cand))  # type: ignore[operator]
         if new_val >= val:
             # Accepted by Armijo yet no float progress: rounding ate the
             # decrease, so this is the numeric bottom.
-            if gnorm < 1e-3:
+            if gnorm < 2e-3:
                 return theta
             raise RuntimeError(f"{what} stalled above tolerance")
         theta, val = cand, new_val

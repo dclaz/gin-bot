@@ -142,20 +142,25 @@ def test_win_prob_is_sigmoid_of_rating_gap() -> None:
 
 
 def test_newton_returns_at_truncation_floor_but_raises_when_stuck() -> None:
-    """The 1e-3 no-progress floor: a flat objective (no decrease representable
+    """The 2e-3 no-progress floor: a flat objective (no decrease representable
     at any alpha) returns below the floor and still raises above it, so the
     floor can never hide a genuinely stuck search."""
 
     def flat_nll(theta: np.ndarray) -> float:
-        return 28503.25
+        return 50325.75
 
     def small_grad(theta: np.ndarray) -> np.ndarray:
         return np.full_like(theta, 5e-4)
+
+    def band_grad(theta: np.ndarray) -> np.ndarray:
+        return np.full_like(theta, 1.5e-3)
 
     def big_grad(theta: np.ndarray) -> np.ndarray:
         return np.full_like(theta, 0.1)
 
     out = _newton(flat_nll, small_grad, np.zeros(3), "floor probe")
+    assert np.allclose(out, np.zeros(3))
+    out = _newton(flat_nll, band_grad, np.zeros(3), "band probe")
     assert np.allclose(out, np.zeros(3))
     with pytest.raises(RuntimeError, match="stalled above tolerance"):
         _newton(flat_nll, big_grad, np.zeros(3), "stuck probe")
