@@ -32,6 +32,12 @@ Append-only: new runs add sections, never rewrite old ones.
 | logging-overhead | peak 0.0003 PASS |
 | reproducible-eval | bit-identical PASS |
 
+- Sensitivity at 5M+1M (single seed, common start `checkpoint.pt`, 500-deal
+  readout vs anchor): A control decay-to-zero -16.03, B magnet-off -15.54,
+  C steady-lr-1e-4 -16.52 — all within noise (±1.3); C's entropy collapsed
+  0.48->0.22. Verdict: LR starvation and magnet drag both rejected as levers;
+  continue the status-quo recipe on a fresh schedule. (The 5M endpoint had
+  lr=reg=0 by construction — frozen, not converged.)
 - Calibration verdict: no `gates.yaml` value changed. The five failures are
   strength gaps (champion loses to anchor/heuristic by ~15 pph, wins 2% of
   matches); moving a threshold to meet them would be editing the gate to

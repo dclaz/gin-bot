@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from ginrl.eval.ratings import (
     ELO_SCALE,
     DealPair,
     LegRecord,
+    _newton,
     elo_duel_prob,
     fit_ratings,
     synthetic_deals,
@@ -137,6 +139,26 @@ def test_win_prob_is_sigmoid_of_rating_gap() -> None:
     assert res.win_prob("mid", ANCHOR) > 0.5
     assert abs(res.win_prob(ANCHOR, "mid") + res.win_prob("mid", ANCHOR) - 1.0) < 1e-12
     assert 0.0 < res.win_prob("mid", ANCHOR) < 1.0
+
+
+def test_newton_returns_at_truncation_floor_but_raises_when_stuck() -> None:
+    """The 1e-3 no-progress floor: a flat objective (no decrease representable
+    at any alpha) returns below the floor and still raises above it, so the
+    floor can never hide a genuinely stuck search."""
+
+    def flat_nll(theta: np.ndarray) -> float:
+        return 28503.25
+
+    def small_grad(theta: np.ndarray) -> np.ndarray:
+        return np.full_like(theta, 5e-4)
+
+    def big_grad(theta: np.ndarray) -> np.ndarray:
+        return np.full_like(theta, 0.1)
+
+    out = _newton(flat_nll, small_grad, np.zeros(3), "floor probe")
+    assert np.allclose(out, np.zeros(3))
+    with pytest.raises(RuntimeError, match="stalled above tolerance"):
+        _newton(flat_nll, big_grad, np.zeros(3), "stuck probe")
 
 
 def test_elo_duel_prob_matches_logistic() -> None:
