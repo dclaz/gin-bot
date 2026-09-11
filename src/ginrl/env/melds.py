@@ -59,7 +59,7 @@ class CardLayout:
 
     def card_to_index(self, card: str) -> int:
         """'As' -> 0 in every layout; 'Ac' -> 13 full, 5 reduced."""
-        return self.suits.index(card[1]) * self.num_ranks + self.ranks.index(card[0])
+        return _layout_indexes(self.num_ranks, self.num_suits)[card]
 
     def index_to_card(self, index: int) -> str:
         """Inverse codec within this layout's compact index range."""
@@ -113,10 +113,24 @@ def layout_utils(layout: CardLayout, hand_size: int) -> gr.GinRummyUtils:
     return gr.GinRummyUtils(layout.num_ranks, layout.num_suits, hand_size)
 
 
+@lru_cache(maxsize=8)
+def _layout_indexes(num_ranks: int, num_suits: int) -> dict[str, int]:
+    """Full card->index table per layout, built once. Same values as the
+    suits.index/ranks.index arithmetic, without per-call scans or slices."""
+    suits, ranks = SUITS[:num_suits], RANKS[:num_ranks]
+    return {
+        r + s: s_idx * num_ranks + r_idx
+        for s_idx, s in enumerate(suits)
+        for r_idx, r in enumerate(ranks)
+    }
+
+
 def _utils_for(layout: CardLayout | None, hand_size: int | None) -> gr.GinRummyUtils:
     layout = layout or DEFAULT_LAYOUT
     size = spiel_facts.GAME_PARAMS["hand_size"] if hand_size is None else hand_size
-    return layout_utils(layout, size)
+    # Int keys avoid hashing the layout per call; the utils object is
+    # stateless apart from its dimensions, so equal params mean equal answers.
+    return get_utils(layout.num_ranks, layout.num_suits, size)
 
 
 def min_deadwood(

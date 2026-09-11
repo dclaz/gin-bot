@@ -168,7 +168,9 @@ class BeliefTracker:
         deadwood_cards = own_set - melded
         own_dw = sum(melds.card_value(c, layout, hand_size) for c in deadwood_cards)
 
-        all_meld_options = melds.layout_utils(layout, hand_size).all_melds(own)
+        all_meld_options = melds.get_utils(layout.num_ranks, layout.num_suits, hand_size).all_melds(
+            own
+        )
         adjacency = [0] * deck
         for option in all_meld_options:
             for c in option:

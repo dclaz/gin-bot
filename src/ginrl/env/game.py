@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+import numpy as np
 import pyspiel
 from pyspiel import gin_rummy as gr
 
@@ -108,8 +109,13 @@ class HandEnv:
         return self._trackers[seat].features(obs, mask).tolist()
 
     def tensor_for(self, seat: int) -> tuple[float, ...]:
-        """Padded raw observation tensor for `seat` (actor input)."""
-        return tuple(float(x) for x in self._require_state().observation_tensor(seat))
+        """Padded raw observation tensor for `seat` (actor input).
+
+        Built through float32 in C: identical values to the elementwise loop
+        at every precision the learner consumes (it reads float32).
+        """
+        raw = np.asarray(self._require_state().observation_tensor(seat), dtype=np.float32)
+        return tuple(raw.tolist())
 
     def hidden_opp_hand(self, seat: int) -> tuple[int, ...]:
         """TRUE opponent hand in layout indices — LABEL NAMESPACE.

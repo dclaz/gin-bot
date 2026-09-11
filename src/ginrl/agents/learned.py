@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import random
 
+import numpy as np
 import torch
 
 from ginrl.env.features import EVENT_WINDOW
@@ -49,10 +50,11 @@ class GinNetAgent:
 
     def choose(self, env: HandEnv, seat: int) -> int:
         mask = env.legal_mask()
-        obs = torch.tensor([gin_observation(env, seat, self.feat_dim)], dtype=torch.float32).to(
-            self.device
-        )
-        legal_mask = torch.tensor([mask[:N_LEARNED_ACTIONS]], dtype=torch.bool).to(self.device)
+        # Zero-copy views: identical float32 values to torch.tensor([...]).
+        obs = torch.from_numpy(
+            np.asarray([gin_observation(env, seat, self.feat_dim)], dtype=np.float32)
+        ).to(self.device)
+        legal_mask = torch.as_tensor([mask[:N_LEARNED_ACTIONS]], dtype=torch.bool).to(self.device)
         with torch.no_grad():
             logits, _, _ = self.net(obs, legal_mask)
         probs = torch.softmax(logits.squeeze(0), dim=-1).tolist()
@@ -86,8 +88,8 @@ class BeliefAblatedAgent(GinNetAgent):
         # Own hand, pile, and scalars stay (public observation, not belief).
         start = 9 * deck
         obs[start : N_CARD_BLOCKS * deck] = [0.0] * (N_CARD_BLOCKS * deck - start)
-        obs_t = torch.tensor([obs], dtype=torch.float32).to(self.device)
-        legal_mask = torch.tensor([mask[:N_LEARNED_ACTIONS]], dtype=torch.bool).to(self.device)
+        obs_t = torch.from_numpy(np.asarray([obs], dtype=np.float32)).to(self.device)
+        legal_mask = torch.as_tensor([mask[:N_LEARNED_ACTIONS]], dtype=torch.bool).to(self.device)
         with torch.no_grad():
             logits, _, _ = self.net(obs_t, legal_mask)
         probs = torch.softmax(logits.squeeze(0), dim=-1).tolist()
