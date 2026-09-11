@@ -115,3 +115,9 @@ Append-only: new runs add sections, never rewrite old ones.
   [+0.717,+0.818] vs clipped-VF + orthogonal +0.791 [+0.755,+0.848].
   Overlapping; per-cell CIs +-0.28 confirm 300k/2k-deal cells cannot
   resolve small gaps. Confirmatory 1M-step / 10k-deal pair running.
+- Plumbing confirmatory (`runs/plumbing1M`, 1M steps x 3 seeds, 10k-deal
+  evals): default +0.976 [+0.934,+1.010] vs clipped-VF + orthogonal +1.045
+  [+0.994,+1.085]. Same +0.07 edge as the screen, still overlapping at 5x
+  budget and 5x eval precision. Verdict: null for transformative purposes;
+  architecture/plumbing work closed, building with the 50M champ (or
+  p5_long if it overtakes).
