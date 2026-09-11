@@ -61,3 +61,17 @@ Append-only: new runs add sections, never rewrite old ones.
   vs their own -20/-21 head-to-head), so these bounds are loose lower bounds;
   the ordering signal (champ bound above heur bound = champ weaker) is the
   usable part and agrees with head-to-head.
+- Third full gate at 25M (`runs/p5_s0`, 25,001,984 steps, best
+  `snapshots/round_12000.pt`): 5/10 pass. beats-anchor -7.28
+  [-7.47,-7.09] n=20000 (from -9.94), matches 0.135 [0.108,0.163] n=600
+  (from 0.068), knock buckets PASS 167/55 (win bucket filled),
+  heuristic -5.11 [-5.74,-4.50] (from -8.09), champ BR bound -29.93 vs
+  heur -35.02 vs bot -49.34 (ordering champ > heur > bot preserved; the
+  champ bound moved down from -18.44, read as a tighter lower bound from
+  more BR training, not a regression — the usable ordering signal is
+  unchanged), elo +530 (from +471), cyclic 0.000, overhead 0.0003, repro
+  bit-identical. first-player-edge [+4.8,+9.1] FAIL — same +6ish Elo seat
+  effect as 15M's [+3.0,+8.6], still inside the proposed |25| tolerance;
+  sign-off still pending, gate file untouched. Trend: +2.7 anchor / +3.0
+  heuristic pph per 10M steps; linear arithmetic points at heuristic
+  parity ~42M and anchor parity ~52M — a projection, not a promise.
