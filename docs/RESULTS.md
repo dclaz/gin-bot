@@ -38,6 +38,19 @@ Append-only: new runs add sections, never rewrite old ones.
   0.48->0.22. Verdict: LR starvation and magnet drag both rejected as levers;
   continue the status-quo recipe on a fresh schedule. (The 5M endpoint had
   lr=reg=0 by construction — frozen, not converged.)
+- Second full gate at 15M (frozen `runs/gate15M`, cells `runs/br_p5_15M`):
+  4/10. beats-anchor -9.94 [-10.13,-9.74], matches 0.068 [0.048,0.090],
+  knock buckets 189/25 (win bucket near the 30 minimum), heuristic -8.09
+  [-8.72,-7.47], champ BR bound -18.44 (from -11.88: less exploitable),
+  elo +471, cyclic 0.000, overhead 0.0003, repro bit-identical. New FAIL:
+  first-player-edge [+3.0,+8.6] — the CI no longer covers 0. That is a
+  sample-size artifact of the criterion, not a new problem: 3x the legs
+  resolved a real but tiny +6 Elo seat effect (50.9/49.1) that the
+  CI-covers-0 form must eventually fail for ANY nonzero edge as data grows.
+  Duplicate comparisons swap seats so nothing is biased. Proposed (not done):
+  tolerance form |edge| < 25 Elo; needs human sign-off since it flips a
+  check to PASS. Count went 5/10 -> 4/10 while every strength number
+  improved — the count is not the trend.
 - Calibration verdict: no `gates.yaml` value changed. The five failures are
   strength gaps (champion loses to anchor/heuristic by ~15 pph, wins 2% of
   matches); moving a threshold to meet them would be editing the gate to
