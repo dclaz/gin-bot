@@ -94,11 +94,19 @@ def run_cell(
     belief_states: list[BeliefState],
     belief_seed: int,
     mask_beliefs: bool = False,
+    hidden: int = 128,
+    layers: int = 2,
+    tag: str | None = None,
 ) -> BakeoffCell:
-    """Train one (torso, seed) cell and evaluate it fully."""
+    """Train one (torso, seed) cell and evaluate it fully.
+
+    hidden/layers/tag default to the Phase 4 bake-off (tag then equals
+    f"{torso}-s{seed}"); the capacity reopen passes wider shapes with
+    distinct tags.
+    """
     if torso not in GIN_TORSOS:
         raise ValueError(f"unknown torso {torso!r}")
-    run_dir = parent / f"{torso}-s{seed}"
+    run_dir = parent / (tag or f"{torso}-s{seed}")
     cfg = bakeoff_cfg(total_steps, seed)
     result = train_gin_selfplay(
         REDUCED_HAND_CONFIG,
@@ -107,13 +115,15 @@ def run_cell(
         seed,
         device,
         run_dir,
+        hidden=hidden,
+        layers=layers,
         eval_every=20,
         eval_deals=100,
         mask_beliefs=mask_beliefs,
     )
     deck = REDUCED_HAND_CONFIG.deck_size
     feat_dim = feature_dim(deck)
-    net = GinNet(torso, feat_dim=feat_dim, deck=deck, hidden=128)
+    net = GinNet(torso, feat_dim=feat_dim, deck=deck, hidden=hidden, layers=layers)
     net.load_state_dict(torch.load(run_dir / "final.pt", weights_only=True))
     net.eval()
     arena = Arena()

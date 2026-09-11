@@ -30,6 +30,9 @@ def main() -> int:
     parser.add_argument("--belief-seed", type=int, required=True)
     parser.add_argument("--belief-states", required=True)
     parser.add_argument("--mask-beliefs", action="store_true")
+    parser.add_argument("--hidden", type=int, default=128)
+    parser.add_argument("--layers", type=int, default=2)
+    parser.add_argument("--tag", default=None)
     args = parser.parse_args()
     with open(args.belief_states, "rb") as fh:
         belief_states = pickle.load(fh)
@@ -43,8 +46,11 @@ def main() -> int:
         belief_states=belief_states,
         belief_seed=args.belief_seed,
         mask_beliefs=args.mask_beliefs,
+        hidden=args.hidden,
+        layers=args.layers,
+        tag=args.tag,
     )
-    out = Path(args.parent) / f"{args.torso}-s{args.seed}" / "cell.json"
+    out = Path(args.parent) / (args.tag or f"{args.torso}-s{args.seed}") / "cell.json"
     out.write_text(json.dumps(cell_dict(cell), indent=2))
     print(
         f"[{args.torso} s{args.seed}] score={cell.final_score:+.3f} "
