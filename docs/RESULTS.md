@@ -88,3 +88,14 @@ Append-only: new runs add sections, never rewrite old ones.
   but is decelerating — current-slope parity sits past 100M. Schedule
   exhausted (alpha/lr ~ 0); entropy has no bonus term, so post-anneal the
   policy can only sharpen. Critic explained variance flat ~0.49.
+- Post-50M probes (common start: 50M checkpoint; 500-deal anchor readout,
+  control -4.86 [-6.11,-3.63] reproduces the gate -4.78): B, magnet-alive
+  schedule (resume total=100M, 2.5M steps): -11.41 [-12.66,-10.18] — the
+  revived uniform-magnet drags the converged policy back toward random
+  faster than it can re-learn. Magnet schedules must decrease
+  monotonically; this also kills the resume-to-100M grind (same reheat
+  mechanics). D'', vf_coef 0.5->1.0 on the dead schedule (3M steps):
+  -4.99 [-6.21,-3.85], identical to control; explained variance 0.33->0.23
+  (no lr, no learning either way). Post-convergence schedule tweaks are
+  dead ends. The 50M champion stands on this recipe; remaining levers are
+  an earlier-checkpoint reheat, capacity reopen, or accepting into Phase 6.
